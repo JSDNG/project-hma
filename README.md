@@ -20,6 +20,9 @@ is a thin translation between HTTP and those pure functions.
 - `GET /config` — effective runtime configuration (secrets masked)
 - `GET /profiles` — fetch profiles from local HMA and return the mapped rows
   (passwords masked by default, optional `?reveal=true`)
+- `DELETE /profiles/{profile_id}` — delete one profile from the local HMA API
+- `DELETE /profiles` — batch-delete (best-effort) for a JSON array of IDs;
+  returns per-ID success/failure
 - `POST /sync` — full pipeline: fetch → map → forward to the n8n webhook;
   supports `dry_run=true` to skip the forward
 - Auto-generated **OpenAPI docs** at `/docs` (Swagger UI) and `/redoc`
@@ -155,6 +158,14 @@ curl -s -X POST "http://127.0.0.1:8000/sync?dry_run=true"
 
 # Full sync — forward to the n8n webhook
 curl -s -X POST http://127.0.0.1:8000/sync
+
+# Delete a single profile
+curl -s -X DELETE http://127.0.0.1:8000/profiles/abc123
+
+# Batch-delete profiles
+curl -s -X DELETE http://127.0.0.1:8000/profiles \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_ids": ["abc123", "def456"]}'
 ```
 
 On **PowerShell** you can also use `Invoke-RestMethod`:

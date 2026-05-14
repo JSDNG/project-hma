@@ -31,10 +31,11 @@ project-hma/
 │   ├── main.py                       # FastAPI() instance, router wiring, OpenAPI metadata
 │   ├── config.py                     # Settings (pydantic-settings) + cached get_settings()
 │   ├── schemas.py                    # Pydantic request/response models
-│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles, /sync
+│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET/DELETE),
+│                                     # /profiles/{id} (DELETE), /sync
 │   └── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
-│                                     # post_sync, resolve_sync_post_url, mask_secrets,
-│                                     # setup_logging
+│                                     # post_sync, delete_profile, resolve_sync_post_url,
+│                                     # mask_secrets, setup_logging
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
@@ -79,6 +80,10 @@ Public surface:
 
 - `fetch_profiles(session, base_url, timeout) -> list[dict]`
 - `profile_to_sync_row(profile: dict) -> dict[str, str]`
+- `delete_profile(session, base_url, profile_id, timeout) -> requests.Response`
+- `parse_hma_body(resp) -> dict | None` — JSON-parses an HMA response into
+  a dict if possible (callers interpret the `code` field themselves; see
+  "HMA response convention" below)
 - `post_sync(session, sync_url, api_key, rows, timeout) -> requests.Response`
 - `resolve_sync_post_url(url: str) -> str`
 - `mask_secrets(row: dict) -> dict`
@@ -127,12 +132,14 @@ or `run_in_threadpool` wrapping for zero benefit at this scale.
 
 Endpoints map to `hma_sync.*` plus light error translation:
 
-| Endpoint           | Calls                                                |
-|--------------------|------------------------------------------------------|
-| `GET  /healthz`    | —                                                    |
-| `GET  /config`     | `get_settings()` → masked view                       |
-| `GET  /profiles`   | `fetch_profiles` → list[`profile_to_sync_row`]       |
-| `POST /sync`       | `fetch_profiles` → map → `post_sync` (unless `dry_run`) |
+| Endpoint                     | Calls                                                       |
+|------------------------------|-------------------------------------------------------------|
+| `GET    /healthz`            | —                                                           |
+| `GET    /config`             | `get_settings()` → masked view                              |
+| `GET    /profiles`           | `fetch_profiles` → list[`profile_to_sync_row`]              |
+| `DELETE /profiles/{id}`      | `delete_profile` (one upstream call)                        |
+| `DELETE /profiles`           | `delete_profile` per ID (best-effort, deduplicated)         |
+| `POST   /sync`               | `fetch_profiles` → map → `post_sync` (unless `dry_run`)     |
 
 ### `app/main.py`
 
@@ -151,10 +158,40 @@ instead of leaking 500s:
 |----------------------------------------------------|--------|---------------------------------------------------|
 | Local HMA unreachable / `requests.RequestException`| `502`  | `{ "detail": "HMA local API error: ..." }`        |
 | Local HMA returns malformed JSON / missing `data`  | `502`  | `{ "detail": "Invalid HMA response: ..." }`       |
+| `DELETE /profiles/{id}` — HMA 402 + `code: 0`      | `402`  | `{ "detail": "HMA local API requires a Team plan ..." }` |
+| `DELETE /profiles/{id}` — HMA `code != 1` (other)  | `502`  | `{ "detail": "HMA local API signaled failure (HTTP N, code=K): ..." }` |
+| `DELETE /profiles` — per-ID errors                 | `200`  | Returned inside `failures[]`, not as an HTTP error |
 | Downstream webhook unreachable                     | `502`  | `{ "detail": "Sync webhook error: ..." }`         |
 | Downstream webhook returns non-2xx                 | `502`  | `{ "detail": "Sync webhook responded HTTP N" }`   |
 | `/sync` without `dry_run=true` and missing API key | `400`  | `{ "detail": "HMA_API_KEY is not configured" }`   |
 | Unexpected exception                               | `500`  | FastAPI default                                   |
+
+---
+
+## HMA response convention
+
+The HideMyAcc local API carries the meaningful status in the response
+**body**'s `code` field, and the meaning of that field is endpoint-specific.
+For `DELETE /profiles/{id}` ([official
+docs](https://eng-hidemyacc.gitbook.io/hidemyacc-docs-vietnamese/hidemyacc-3.0-tinh-nang/hidemyacc-3.0-api/profile/xoa-profile)):
+
+| HMA HTTP | HMA body         | Meaning                                            |
+|----------|------------------|----------------------------------------------------|
+| `200`    | `{"code": 1}`    | Success — profile deleted.                         |
+| `402`    | `{"code": 0}`    | "API supported from Team plan" — subscription required. |
+
+`parse_hma_body(resp)` returns the JSON body as a dict (or `None` if the
+body wasn't JSON). The DELETE route's `_interpret_hma_delete` helper applies
+the rules above:
+
+1. `code == 1` → success.
+2. HTTP `402` + `code == 0` → pass `402` through with a clear message.
+3. Anything else → `502` with `(HTTP N, code=K, body...)` in `detail`.
+
+This is applied **only** to the DELETE endpoints. `GET /profiles` already
+relies on the presence of `data: [...]` rather than a code value, and the
+downstream `POST /sync` targets an external n8n webhook that follows
+standard HTTP codes.
 
 ---
 

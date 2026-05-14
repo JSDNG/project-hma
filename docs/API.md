@@ -110,6 +110,127 @@ When `reveal=true` the `password` field contains the raw value. Intended for
 
 ---
 
+## `DELETE /profiles/{profile_id}`  — Delete one profile
+
+**Tags:** `profiles`
+
+Deletes a single profile by ID via the local HMA API
+(`DELETE http://127.0.0.1:2268/profiles/{profile_id}`).
+
+**Path parameters**
+
+| Name         | Type   | Description                       |
+|--------------|--------|-----------------------------------|
+| `profile_id` | `str`  | HideMyAcc profile ID to delete.   |
+
+**Response — 200 OK**
+
+```json
+{
+  "profile_id": "abc123",
+  "deleted": true,
+  "upstream_status": 200
+}
+```
+
+**Errors**
+
+| Status | When                                                                       |
+|--------|----------------------------------------------------------------------------|
+| `402`  | HMA returned `{"code": 0}` with HTTP 402 — endpoint requires a Team plan.  |
+| `502`  | Local HMA API unreachable, or signaled any other failure.                  |
+
+> **Note — HMA response convention** (per
+> [official docs](https://eng-hidemyacc.gitbook.io/hidemyacc-docs-vietnamese/hidemyacc-3.0-tinh-nang/hidemyacc-3.0-api/profile/xoa-profile)):
+> success is HTTP `200` with body `{"code": 1}`. The most common error is
+> HTTP `402` with `{"code": 0}` meaning "API supported from Team plan" —
+> i.e. the HMA account on this machine doesn't have the subscription tier
+> required by the API. The service passes that through as a `402` so it
+> stays distinguishable from generic upstream errors.
+
+**Example**
+
+```bash
+curl -s -X DELETE http://127.0.0.1:8000/profiles/abc123
+```
+
+---
+
+## `DELETE /profiles`  — Delete many profiles (batch)
+
+**Tags:** `profiles`
+
+Deletes an array of profiles by ID. Each ID is sent to the local HMA API as
+its own `DELETE /profiles/{id}` request. The operation is **best-effort**:
+individual failures do not abort the rest. Duplicate IDs in the input are
+deduplicated (order preserved).
+
+**Request body**
+
+```json
+{
+  "profile_ids": ["abc123", "def456", "ghi789"]
+}
+```
+
+| Field         | Type        | Notes                                                                 |
+|---------------|-------------|-----------------------------------------------------------------------|
+| `profile_ids` | `list[str]` | Required. Must contain at least one ID. Duplicates are removed.       |
+
+**Response — 200 OK**
+
+```json
+{
+  "requested": 3,
+  "deleted": 2,
+  "failed": 1,
+  "deleted_ids": ["abc123", "ghi789"],
+  "failures": [
+    {
+      "profile_id": "def456",
+      "upstream_status": 404,
+      "error": "not found"
+    }
+  ]
+}
+```
+
+Field semantics:
+
+- `requested` — number of unique, non-empty IDs after deduplication.
+- `deleted` — count of IDs the local HMA API accepted (2xx).
+- `failed` — count of IDs that returned non-2xx or raised a network error.
+- `deleted_ids` — IDs that succeeded, in submission order.
+- `failures[].upstream_status` — HTTP status from HMA, or `null` if the call
+  never reached it (network error, timeout).
+- `failures[].error` — truncated upstream body or exception message.
+
+**Errors**
+
+| Status | When                                                              |
+|--------|-------------------------------------------------------------------|
+| `422`  | Validation failure (`profile_ids` missing, not a list, or empty). |
+
+Per-ID failures are **not** reported as HTTP errors — they appear inside
+`failures`. The endpoint returns `200` as long as the request body is valid.
+
+**Example**
+
+```bash
+curl -s -X DELETE http://127.0.0.1:8000/profiles \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_ids": ["abc123", "def456"]}'
+```
+
+```powershell
+# PowerShell
+Invoke-RestMethod -Method Delete -Uri http://127.0.0.1:8000/profiles `
+  -ContentType 'application/json' `
+  -Body '{"profile_ids": ["abc123", "def456"]}'
+```
+
+---
+
 ## `POST /sync`  — Run the full pipeline
 
 **Tags:** `sync`
@@ -178,6 +299,20 @@ curl -s -X POST 'http://127.0.0.1:8000/sync?dry_run=true' | jq
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/sync | jq
+```
+
+### Delete a profile
+
+```bash
+curl -s -X DELETE http://127.0.0.1:8000/profiles/abc123 | jq
+```
+
+### Batch-delete profiles
+
+```bash
+curl -s -X DELETE http://127.0.0.1:8000/profiles \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_ids": ["abc123", "def456"]}' | jq
 ```
 
 ### Inspect mapped rows with passwords revealed (local debug only)

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from app.hma_sync import (
     SYNC_POST_SUFFIX,
+    delete_profile,
     mask_secrets,
     profile_to_sync_row,
     resolve_sync_post_url,
@@ -116,3 +121,22 @@ def test_resolve_sync_post_url_strips_trailing_slash():
 
 def test_resolve_sync_post_url_empty():
     assert resolve_sync_post_url("") == ""
+
+
+def test_delete_profile_builds_correct_url():
+    session = MagicMock()
+    delete_profile(session, "http://hma.test/", "abc123", 10)
+    session.delete.assert_called_once_with("http://hma.test/profiles/abc123", timeout=10)
+
+
+def test_delete_profile_strips_trailing_slash_from_base():
+    session = MagicMock()
+    delete_profile(session, "http://hma.test", "id1", 5)
+    session.delete.assert_called_once_with("http://hma.test/profiles/id1", timeout=5)
+
+
+def test_delete_profile_rejects_empty_id():
+    session = MagicMock()
+    with pytest.raises(ValueError):
+        delete_profile(session, "http://hma.test", "   ", 5)
+    session.delete.assert_not_called()

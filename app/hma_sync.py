@@ -117,6 +117,36 @@ def fetch_profiles(
     return data
 
 
+def delete_profile(
+    session: requests.Session,
+    base_url: str,
+    profile_id: str,
+    timeout: int,
+) -> requests.Response:
+    """DELETE /profiles/{profile_id} against the local HideMyAcc API."""
+    pid = profile_id.strip()
+    if not pid:
+        raise ValueError("profile_id must be a non-empty string")
+    url = base_url.rstrip("/") + DEFAULT_PROFILES_PATH + "/" + pid
+    logging.info("DELETE %s", url)
+    return session.delete(url, timeout=timeout)
+
+
+def parse_hma_body(resp: requests.Response) -> dict[str, Any] | None:
+    """Return the response body as a dict if it parsed as JSON, else None.
+
+    The HMA local API uses a body-level ``code`` field whose semantics are
+    endpoint-specific (e.g. ``DELETE /profiles/{id}`` uses ``code == 1`` for
+    success and ``code == 0`` with HTTP 402 for "API supported from Team
+    plan"). Callers must interpret ``code`` themselves.
+    """
+    try:
+        parsed = resp.json()
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def post_sync(
     session: requests.Session,
     sync_url: str,
