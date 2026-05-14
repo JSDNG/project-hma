@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local config
+.env
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs (keep the folder, ignore contents)
+logs/*
+!logs/.gitkeep
+
+# macOS
+.DS_Store
