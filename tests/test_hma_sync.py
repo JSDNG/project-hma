@@ -8,7 +8,6 @@ import pytest
 
 from app.hma_sync import (
     delete_profile,
-    mask_secrets,
     profile_to_sync_row,
 )
 
@@ -72,23 +71,6 @@ def test_profile_to_sync_row_handles_zero_port():
 def test_profile_to_sync_row_non_string_user_agent():
     row = profile_to_sync_row({"id": "x", "name": "y", "userAgent": 12345})
     assert row["user_agent"] == "12345"
-
-
-def test_mask_secrets_redacts_password():
-    out = mask_secrets({"username": "u", "password": "sekret"})
-    assert out["password"] == "***"
-    assert out["username"] == "u"
-
-
-def test_mask_secrets_leaves_empty_password_alone():
-    out = mask_secrets({"username": "u", "password": ""})
-    assert out["password"] == ""
-
-
-def test_mask_secrets_returns_a_copy():
-    src = {"username": "u", "password": "p"}
-    mask_secrets(src)
-    assert src["password"] == "p", "original dict must not be mutated"
 
 
 def test_delete_profile_builds_correct_url():

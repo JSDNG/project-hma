@@ -18,7 +18,7 @@ is a thin translation between HTTP and those pure functions.
 - `GET /healthz` — liveness check
 - `GET /config` — effective runtime configuration
 - `GET /profiles` — fetch profiles from local HMA and return the mapped rows
-  (passwords masked by default, optional `?reveal=true`)
+  (proxy passwords included in the response)
 - `DELETE /profiles/{profile_id}` — delete one profile from the local HMA API
 - `DELETE /profiles` — batch-delete (best-effort) for a JSON array of IDs;
   returns per-ID success/failure
@@ -159,7 +159,7 @@ HMA_PROFILE_SYNC_API_KEY=...` first, or substitute the value inline.
 # Health check
 curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/healthz
 
-# Preview mapped rows (passwords masked)
+# List mapped profile rows (proxy passwords included)
 curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/profiles
 
 # Delete a single profile

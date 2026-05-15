@@ -31,7 +31,7 @@ def test_config_returns_effective_settings(client):
     }
 
 
-def test_profiles_masks_passwords_by_default(client):
+def test_profiles_returns_raw_password(client):
     profiles = [
         {
             "id": "p1",
@@ -51,27 +51,8 @@ def test_profiles_masks_passwords_by_default(client):
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 1
-    assert body["rows"][0]["password"] == "***"
-    assert body["rows"][0]["proxy"] == "h"
-
-
-def test_profiles_reveal_returns_raw_password(client):
-    profiles = [
-        {
-            "id": "p1",
-            "name": "Profile 1",
-            "proxy": {
-                "host": "h",
-                "port": 9,
-                "username": "u",
-                "password": "secret",
-            },
-        }
-    ]
-    with patch("app.routes.requests.Session") as mock_session:
-        mock_session.return_value.get.return_value = _hma_get_response(profiles)
-        r = client.get("/profiles?reveal=true")
-    assert r.json()["rows"][0]["password"] == "secret"
+    assert body["data"][0]["password"] == "secret"
+    assert body["data"][0]["proxy"] == "h"
 
 
 def test_profiles_returns_502_on_upstream_network_error(client):

@@ -78,27 +78,23 @@ because they had to send it to reach this endpoint.
 **Tags:** `profiles`
 
 Fetches profiles from the local HideMyAcc API and returns them mapped to a
-flat row shape (one row per profile, all string fields).
-
-**Query parameters**
-
-| Name      | Type    | Default | Description                                              |
-|-----------|---------|---------|----------------------------------------------------------|
-| `reveal`  | `bool`  | `false` | If `true`, returns proxy passwords in clear text.        |
+flat row shape (one row per profile, all string fields). Proxy passwords
+are returned in clear text — the endpoint is gated by `x-api-key`, so
+treat the key as sensitive.
 
 **Response — 200 OK**
 
 ```json
 {
   "count": 2,
-  "rows": [
+  "data": [
     {
       "profile_id": "abc123",
       "profile_name": "Acme - US east",
       "proxy": "proxy.example.com",
       "port": "8080",
       "username": "user1",
-      "password": "***",
+      "password": "s3cret",
       "user_agent": "Mozilla/5.0 ..."
     },
     {
@@ -113,9 +109,6 @@ flat row shape (one row per profile, all string fields).
   ]
 }
 ```
-
-When `reveal=true` the `password` field contains the raw value. Intended for
-**local debugging only**.
 
 **Errors**
 
@@ -281,11 +274,4 @@ curl -s -X DELETE http://127.0.0.1:8000/profiles \
   -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"profile_ids": ["abc123", "def456"]}' | jq
-```
-
-### Inspect mapped rows with passwords revealed (local debug only)
-
-```bash
-curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
-  'http://127.0.0.1:8000/profiles?reveal=true' | jq
 ```

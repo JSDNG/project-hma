@@ -35,8 +35,7 @@ project-hma/
 │                                     # /profiles (DELETE batch), /profiles/{id} (DELETE)
 │   ├── auth.py                       # require_api_key dependency (x-api-key gate)
 │   └── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
-│                                     # delete_profile, parse_hma_body, mask_secrets,
-│                                     # setup_logging
+│                                     # delete_profile, parse_hma_body, setup_logging
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
@@ -85,7 +84,6 @@ Public surface:
 - `parse_hma_body(resp) -> dict | None` — JSON-parses an HMA response into
   a dict if possible (callers interpret the `code` field themselves; see
   "HMA response convention" below)
-- `mask_secrets(row: dict) -> dict`
 - `setup_logging(log_file=None, level="INFO") -> None`
 
 Module constants: `DEFAULT_HMA_BASE`, `DEFAULT_PROFILES_PATH`,
@@ -111,8 +109,8 @@ same instance and tests can override the dependency cleanly.
 Pydantic models that mirror what the service returns. Notable types:
 
 - `ProfileRow` — one mapped row (`profile_id`, `profile_name`, `proxy`, `port`,
-  `username`, `password`, `user_agent`). `password` is `str` but the route
-  layer masks it before returning.
+  `username`, `password`, `user_agent`). The proxy `password` is returned
+  in clear text; access control is provided by the `x-api-key` gate.
 - `ConfigView` — non-secret settings snapshot
   (`hma_local_api_base`, `hma_http_timeout`, `hma_log_level`). The inbound
   API key is never echoed back.
@@ -198,10 +196,10 @@ relies on the presence of `data: [...]` rather than a code value.
   comparison uses `secrets.compare_digest` to avoid timing leaks. The gate
   is **fail-closed**: if the server has no key configured, all requests are
   rejected with `500` rather than silently letting traffic through.
-- **Secrets are never returned in responses.** Passwords in profile rows are
-  masked. A `?reveal=true` flag on `/profiles` unmasks passwords, intended
-  for local debugging — not for production exposure. The inbound API key is
-  never echoed back from `/config`.
+- **Proxy passwords are returned in clear text** on `GET /profiles`. The
+  endpoint is gated by `x-api-key`, so access control is the responsibility
+  of whoever holds the key — treat `HMA_PROFILE_SYNC_API_KEY` as sensitive.
+  The inbound API key itself is never echoed back from `/config`.
 - No hardcoded API key defaults anywhere in source.
   `HMA_PROFILE_SYNC_API_KEY` comes only from the environment (or `.env`).
 
@@ -211,8 +209,8 @@ relies on the presence of `data: [...]` rather than a code value.
 
 - **Pure-logic unit tests** (`test_hma_sync.py`): exercise `profile_to_sync_row`
   with multiple profile shapes (proxy dict present, fallback to `autoProxy*`,
-  missing fields, non-string port), `mask_secrets` edge cases, and the
-  argument validation of `delete_profile`.
+  missing fields, non-string port) and the argument validation of
+  `delete_profile`.
 - **Route tests** (`test_routes.py`): use FastAPI `TestClient` with a `with`
   block (so lifespan runs). Upstream HTTP is patched at the
   `requests.Session.get/delete` boundary using `unittest.mock`. Override

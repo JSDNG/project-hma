@@ -77,14 +77,6 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def mask_secrets(row: dict[str, str]) -> dict[str, str]:
-    """Return a copy of a row with the password redacted (empty strings preserved)."""
-    out = dict(row)
-    if out.get("password"):
-        out["password"] = "***"
-    return out
-
-
 def fetch_profiles(
     session: requests.Session, base_url: str, timeout: int
 ) -> list[dict[str, Any]]:

@@ -27,7 +27,7 @@ class ProfileRow(BaseModel):
 
 class ProfilesResponse(BaseModel):
     count: int
-    rows: list[ProfileRow]
+    data: list[ProfileRow]
 
 
 class DeleteResponse(BaseModel):

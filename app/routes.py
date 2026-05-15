@@ -5,14 +5,13 @@ from __future__ import annotations
 from typing import Annotated
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from .auth import require_api_key
 from .config import Settings, get_settings
 from .hma_sync import (
     delete_profile,
     fetch_profiles,
-    mask_secrets,
     parse_hma_body,
     profile_to_sync_row,
 )
@@ -96,14 +95,9 @@ def _fetch_rows(settings: Settings) -> list[dict[str, str]]:
 @router.get("/profiles", response_model=ProfilesResponse, tags=["profiles"])
 def list_profiles(
     settings: Annotated[Settings, Depends(get_settings)],
-    reveal: bool = Query(
-        False, description="If true, do not mask proxy passwords."
-    ),
 ) -> ProfilesResponse:
     rows = _fetch_rows(settings)
-    if not reveal:
-        rows = [mask_secrets(r) for r in rows]
-    return ProfilesResponse(count=len(rows), rows=[ProfileRow(**r) for r in rows])
+    return ProfilesResponse(count=len(rows), data=[ProfileRow(**r) for r in rows])
 
 
 @router.delete(
