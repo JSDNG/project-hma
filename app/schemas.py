@@ -11,8 +11,6 @@ class HealthResponse(BaseModel):
 
 class ConfigView(BaseModel):
     hma_local_api_base: str
-    sync_post_url: str
-    hma_api_key: str
     hma_http_timeout: int
     hma_log_level: str
 
@@ -30,15 +28,6 @@ class ProfileRow(BaseModel):
 class ProfilesResponse(BaseModel):
     count: int
     rows: list[ProfileRow]
-
-
-class SyncSummary(BaseModel):
-    rows_fetched: int
-    rows_forwarded: int
-    dry_run: bool
-    sync_url: str
-    downstream_status: int | None = Field(default=None)
-    downstream_body: str | None = Field(default=None)
 
 
 class DeleteResponse(BaseModel):

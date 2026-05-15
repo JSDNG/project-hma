@@ -1,4 +1,4 @@
-"""Unit tests for the pure mapping and URL-resolution helpers."""
+"""Unit tests for the pure mapping helpers."""
 
 from __future__ import annotations
 
@@ -7,11 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.hma_sync import (
-    SYNC_POST_SUFFIX,
     delete_profile,
     mask_secrets,
     profile_to_sync_row,
-    resolve_sync_post_url,
 )
 
 
@@ -91,36 +89,6 @@ def test_mask_secrets_returns_a_copy():
     src = {"username": "u", "password": "p"}
     mask_secrets(src)
     assert src["password"] == "p", "original dict must not be mutated"
-
-
-def test_resolve_sync_post_url_already_full():
-    full = "https://n8n.example.com/webhook" + SYNC_POST_SUFFIX
-    assert resolve_sync_post_url(full) == full
-
-
-def test_resolve_sync_post_url_origin_only():
-    assert (
-        resolve_sync_post_url("https://n8n.example.com")
-        == "https://n8n.example.com/webhook" + SYNC_POST_SUFFIX
-    )
-
-
-def test_resolve_sync_post_url_webhook_base():
-    assert (
-        resolve_sync_post_url("https://n8n.example.com/webhook")
-        == "https://n8n.example.com/webhook" + SYNC_POST_SUFFIX
-    )
-
-
-def test_resolve_sync_post_url_strips_trailing_slash():
-    assert (
-        resolve_sync_post_url("https://n8n.example.com/webhook/")
-        == "https://n8n.example.com/webhook" + SYNC_POST_SUFFIX
-    )
-
-
-def test_resolve_sync_post_url_empty():
-    assert resolve_sync_post_url("") == ""
 
 
 def test_delete_profile_builds_correct_url():

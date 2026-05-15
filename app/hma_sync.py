@@ -1,4 +1,4 @@
-"""Pure HideMyAcc sync logic, shared by the CLI script and the FastAPI service.
+"""Pure HideMyAcc helpers used by the FastAPI service.
 
 No FastAPI imports here; this module is independently usable.
 
@@ -13,19 +13,16 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import requests
 
 DEFAULT_HMA_BASE = "http://127.0.0.1:2268"
 DEFAULT_PROFILES_PATH = "/profiles"
 DEFAULT_TIMEOUT = 30
-DEFAULT_HMA_PROFILES_SYNC_URL = "https://n8n.supover.com/webhook"
-SYNC_POST_SUFFIX = "/api/hma-profiles/sync"
 
 
 def setup_logging(log_file: Path | None = None, level: str | int = "INFO") -> None:
-    """Configure root logging for both the CLI and the API."""
+    """Configure root logging for the API service."""
     if isinstance(level, str):
         level = logging.getLevelName(level.upper())
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
@@ -47,7 +44,7 @@ def _proxy_dict(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
-    """Map a HideMyAcc GET /profiles item to one POST body row (all string fields).
+    """Map a HideMyAcc GET /profiles item to a flat row of string fields.
 
     Uses proxy.host, proxy.port, proxy.username, proxy.password when present;
     falls back to autoProxy* fields for other modes / older payloads.
@@ -145,46 +142,3 @@ def parse_hma_body(resp: requests.Response) -> dict[str, Any] | None:
     except ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None
-
-
-def post_sync(
-    session: requests.Session,
-    sync_url: str,
-    api_key: str,
-    rows: list[dict[str, str]],
-    timeout: int,
-) -> requests.Response:
-    payload = {"data": rows}
-    logging.info("POST %s (rows: %d)", sync_url, len(rows))
-    logging.debug(
-        "Payload (passwords masked): %s",
-        json.dumps({"data": [mask_secrets(r) for r in rows]}, ensure_ascii=False)[:8000],
-    )
-    return session.post(
-        sync_url,
-        headers={
-            "X-Api-Key": api_key.strip(),
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=timeout,
-    )
-
-
-def resolve_sync_post_url(url: str) -> str:
-    """Resolve the full POST URL from a webhook base or origin.
-
-    - Already ends with .../api/hma-profiles/sync → unchanged.
-    - Origin only (no path) → .../webhook + SYNC_POST_SUFFIX.
-    - Otherwise (e.g. .../webhook) → base + SYNC_POST_SUFFIX.
-    """
-    u = url.strip().rstrip("/")
-    if not u:
-        return u
-    if u.endswith(SYNC_POST_SUFFIX):
-        return u
-    parsed = urlparse(u)
-    path = (parsed.path or "").strip("/")
-    if not path:
-        return u + "/webhook" + SYNC_POST_SUFFIX
-    return u + SYNC_POST_SUFFIX

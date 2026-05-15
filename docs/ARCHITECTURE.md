@@ -2,7 +2,7 @@
 
 ## Goals
 
-1. **Single source of truth for sync logic.** All fetch / map / forward code
+1. **Single source of truth for HMA logic.** All fetch / map / delete code
    lives in one pure module (`app/hma_sync.py`); the HTTP layer is just
    translation. No duplication across files.
 2. **Stateless.** No database, no queue, no on-disk cache. Each request is
@@ -10,15 +10,15 @@
 3. **Simple to run.** A single `uvicorn` command should start the service. No
    Docker required. Runs identically on macOS, Linux, and Windows.
 4. **Explicit configuration.** All tunables come from environment variables
-   (or a local `.env`), with safe defaults. Secrets are masked in logs and in
-   the `/config` response.
+   (or a local `.env`), with safe defaults. Secrets are never echoed back.
 5. **Production-ready basics.** Typed Pydantic models, structured logging,
-   proper HTTP status codes for upstream failures, OpenAPI documentation.
+   proper HTTP status codes for upstream failures, `x-api-key` gate on every
+   route, OpenAPI documentation.
 
 ## Non-goals
 
-- Persistence, authentication, rate limiting, background jobs, multi-tenant
-  config — explicitly out of scope for this iteration.
+- Persistence, rate limiting, background jobs, multi-tenant config —
+  explicitly out of scope for this iteration.
 
 ---
 
@@ -31,12 +31,12 @@ project-hma/
 │   ├── main.py                       # FastAPI() instance, router wiring, OpenAPI metadata
 │   ├── config.py                     # Settings (pydantic-settings) + cached get_settings()
 │   ├── schemas.py                    # Pydantic request/response models
-│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET/DELETE),
-│                                     # /profiles/{id} (DELETE), /sync
+│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET),
+│                                     # /profiles (DELETE batch), /profiles/{id} (DELETE)
 │   ├── auth.py                       # require_api_key dependency (x-api-key gate)
 │   └── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
-│                                     # post_sync, delete_profile, resolve_sync_post_url,
-│                                     # mask_secrets, setup_logging
+│                                     # delete_profile, parse_hma_body, mask_secrets,
+│                                     # setup_logging
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
@@ -85,21 +85,18 @@ Public surface:
 - `parse_hma_body(resp) -> dict | None` — JSON-parses an HMA response into
   a dict if possible (callers interpret the `code` field themselves; see
   "HMA response convention" below)
-- `post_sync(session, sync_url, api_key, rows, timeout) -> requests.Response`
-- `resolve_sync_post_url(url: str) -> str`
 - `mask_secrets(row: dict) -> dict`
 - `setup_logging(log_file=None, level="INFO") -> None`
 
 Module constants: `DEFAULT_HMA_BASE`, `DEFAULT_PROFILES_PATH`,
-`DEFAULT_TIMEOUT`, `DEFAULT_HMA_PROFILES_SYNC_URL`, `SYNC_POST_SUFFIX`.
+`DEFAULT_TIMEOUT`.
 
 ### `app/config.py`
 
 ```python
 class Settings(BaseSettings):
     hma_local_api_base: str = "http://127.0.0.1:2268"
-    hma_profiles_sync_url: str = "https://n8n.supover.com/webhook"
-    hma_api_key: str = ""              # required for non-dry-run /sync
+    hma_profile_sync_api_key: str = ""    # required: inbound x-api-key
     hma_http_timeout: int = 30
     hma_log_level: str = "INFO"
 
@@ -116,18 +113,18 @@ Pydantic models that mirror what the service returns. Notable types:
 - `ProfileRow` — one mapped row (`profile_id`, `profile_name`, `proxy`, `port`,
   `username`, `password`, `user_agent`). `password` is `str` but the route
   layer masks it before returning.
-- `SyncSummary` — `{ rows_fetched, rows_forwarded, downstream_status,
-  downstream_body, dry_run, sync_url }`.
-- `ConfigView` — masked settings snapshot. Exposes only the **resolved**
-  `sync_post_url` (the raw `hma_profiles_sync_url` base is omitted). `api_key`
-  is shown as `"***"` if set, empty string otherwise.
+- `ConfigView` — non-secret settings snapshot
+  (`hma_local_api_base`, `hma_http_timeout`, `hma_log_level`). The inbound
+  API key is never echoed back.
+- `DeleteResponse` / `BatchDeleteRequest` / `BatchDeleteResponse` /
+  `BatchDeleteFailure` — DELETE endpoint shapes.
 - `HealthResponse` — `{ status: "ok" }`.
 
 ### `app/routes.py`
 
-A single `APIRouter()` with tags grouped by purpose (`system`, `profiles`,
-`sync`). Endpoints are **synchronous** (`def`, not `async def`) because the
-service uses the blocking `requests` library; FastAPI runs sync handlers in a
+A single `APIRouter()` with tags grouped by purpose (`system`, `profiles`).
+Endpoints are **synchronous** (`def`, not `async def`) because the service
+uses the blocking `requests` library; FastAPI runs sync handlers in a
 threadpool automatically. Going async would force a parallel `httpx` codebase
 or `run_in_threadpool` wrapping for zero benefit at this scale.
 
@@ -136,11 +133,10 @@ Endpoints map to `hma_sync.*` plus light error translation:
 | Endpoint                     | Calls                                                       |
 |------------------------------|-------------------------------------------------------------|
 | `GET    /healthz`            | —                                                           |
-| `GET    /config`             | `get_settings()` → masked view                              |
+| `GET    /config`             | `get_settings()` → non-secret view                          |
 | `GET    /profiles`           | `fetch_profiles` → list[`profile_to_sync_row`]              |
 | `DELETE /profiles/{id}`      | `delete_profile` (one upstream call)                        |
 | `DELETE /profiles`           | `delete_profile` per ID (best-effort, deduplicated)         |
-| `POST   /sync`               | `fetch_profiles` → map → `post_sync` (unless `dry_run`)     |
 
 ### `app/main.py`
 
@@ -162,9 +158,6 @@ instead of leaking 500s:
 | `DELETE /profiles/{id}` — HMA 402 + `code: 0`      | `402`  | `{ "detail": "HMA local API requires a Team plan ..." }` |
 | `DELETE /profiles/{id}` — HMA `code != 1` (other)  | `502`  | `{ "detail": "HMA local API signaled failure (HTTP N, code=K): ..." }` |
 | `DELETE /profiles` — per-ID errors                 | `200`  | Returned inside `failures[]`, not as an HTTP error |
-| Downstream webhook unreachable                     | `502`  | `{ "detail": "Sync webhook error: ..." }`         |
-| Downstream webhook returns non-2xx                 | `502`  | `{ "detail": "Sync webhook responded HTTP N" }`   |
-| `/sync` without `dry_run=true` and missing API key | `400`  | `{ "detail": "HMA_API_KEY is not configured" }`   |
 | Missing / wrong `x-api-key` header                 | `401`  | `{ "detail": "Invalid or missing x-api-key" }`    |
 | Server `HMA_PROFILE_SYNC_API_KEY` not configured   | `500`  | `{ "detail": "HMA_PROFILE_SYNC_API_KEY is not configured on the server" }` |
 | Unexpected exception                               | `500`  | FastAPI default                                   |
@@ -192,9 +185,7 @@ the rules above:
 3. Anything else → `502` with `(HTTP N, code=K, body...)` in `detail`.
 
 This is applied **only** to the DELETE endpoints. `GET /profiles` already
-relies on the presence of `data: [...]` rather than a code value, and the
-downstream `POST /sync` targets an external n8n webhook that follows
-standard HTTP codes.
+relies on the presence of `data: [...]` rather than a code value.
 
 ---
 
@@ -207,16 +198,12 @@ standard HTTP codes.
   comparison uses `secrets.compare_digest` to avoid timing leaks. The gate
   is **fail-closed**: if the server has no key configured, all requests are
   rejected with `500` rather than silently letting traffic through.
-- **Two keys, two directions.** `HMA_PROFILE_SYNC_API_KEY` authenticates
-  inbound callers of this service. `HMA_API_KEY` is the outbound credential
-  the service sends to the downstream n8n webhook on `/sync`. They are not
-  interchangeable.
-- **Secrets are never returned in responses.** Passwords in profile rows and
-  the API key in `/config` are masked. A `?reveal=true` flag on `/profiles`
-  unmasks passwords, intended for local debugging — not for production
-  exposure.
-- No hardcoded API key defaults anywhere in source. Both `HMA_API_KEY` and
-  `HMA_PROFILE_SYNC_API_KEY` come only from the environment (or `.env`).
+- **Secrets are never returned in responses.** Passwords in profile rows are
+  masked. A `?reveal=true` flag on `/profiles` unmasks passwords, intended
+  for local debugging — not for production exposure. The inbound API key is
+  never echoed back from `/config`.
+- No hardcoded API key defaults anywhere in source.
+  `HMA_PROFILE_SYNC_API_KEY` comes only from the environment (or `.env`).
 
 ---
 
@@ -224,12 +211,14 @@ standard HTTP codes.
 
 - **Pure-logic unit tests** (`test_hma_sync.py`): exercise `profile_to_sync_row`
   with multiple profile shapes (proxy dict present, fallback to `autoProxy*`,
-  missing fields, non-string port). Also `resolve_sync_post_url` against all
-  three URL shapes from its docstring, plus `mask_secrets` edge cases.
+  missing fields, non-string port), `mask_secrets` edge cases, and the
+  argument validation of `delete_profile`.
 - **Route tests** (`test_routes.py`): use FastAPI `TestClient` with a `with`
   block (so lifespan runs). Upstream HTTP is patched at the
-  `requests.Session.get/post` boundary using `unittest.mock`. Override
-  `get_settings` via `app.dependency_overrides` to inject test config.
+  `requests.Session.get/delete` boundary using `unittest.mock`. Override
+  `get_settings` via `app.dependency_overrides` to inject test config. A
+  separate `unauth_client` fixture (no default `x-api-key` header) covers
+  the auth gate.
 - No live HTTP. CI-safe.
 
 Run with `pytest -q` from the project root (any OS).

@@ -14,9 +14,7 @@ from .hma_sync import (
     fetch_profiles,
     mask_secrets,
     parse_hma_body,
-    post_sync,
     profile_to_sync_row,
-    resolve_sync_post_url,
 )
 from .schemas import (
     BatchDeleteFailure,
@@ -27,7 +25,6 @@ from .schemas import (
     HealthResponse,
     ProfileRow,
     ProfilesResponse,
-    SyncSummary,
 )
 
 HMA_DELETE_SUCCESS_CODE = 1
@@ -74,8 +71,6 @@ def show_config(
 ) -> ConfigView:
     return ConfigView(
         hma_local_api_base=settings.hma_local_api_base,
-        sync_post_url=resolve_sync_post_url(settings.hma_profiles_sync_url),
-        hma_api_key="***" if settings.hma_api_key else "",
         hma_http_timeout=settings.hma_http_timeout,
         hma_log_level=settings.hma_log_level,
     )
@@ -109,54 +104,6 @@ def list_profiles(
     if not reveal:
         rows = [mask_secrets(r) for r in rows]
     return ProfilesResponse(count=len(rows), rows=[ProfileRow(**r) for r in rows])
-
-
-@router.post("/sync", response_model=SyncSummary, tags=["sync"])
-def trigger_sync(
-    settings: Annotated[Settings, Depends(get_settings)],
-    dry_run: bool = Query(
-        False,
-        description="If true, fetch + map but do not POST to the downstream webhook.",
-    ),
-) -> SyncSummary:
-    if not dry_run and not settings.hma_api_key.strip():
-        raise HTTPException(status_code=400, detail="HMA_API_KEY is not configured")
-
-    rows = _fetch_rows(settings)
-    sync_url = resolve_sync_post_url(settings.hma_profiles_sync_url)
-
-    if dry_run or not rows:
-        return SyncSummary(
-            rows_fetched=len(rows),
-            rows_forwarded=0,
-            dry_run=dry_run,
-            sync_url=sync_url,
-        )
-
-    session = requests.Session()
-    try:
-        resp = post_sync(
-            session, sync_url, settings.hma_api_key, rows, settings.hma_http_timeout
-        )
-    except requests.RequestException as e:
-        raise HTTPException(
-            status_code=502, detail=f"Sync webhook error: {e}"
-        ) from e
-
-    if not resp.ok:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Sync webhook responded HTTP {resp.status_code}: {resp.text[:500]}",
-        )
-
-    return SyncSummary(
-        rows_fetched=len(rows),
-        rows_forwarded=len(rows),
-        dry_run=False,
-        sync_url=sync_url,
-        downstream_status=resp.status_code,
-        downstream_body=resp.text[:4000],
-    )
 
 
 @router.delete(

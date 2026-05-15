@@ -36,18 +36,13 @@ environment variable. Comparison is constant-time
 The gate is enforced at the router level, so it applies to **every**
 endpoint listed below — including `/healthz`.
 
-> **Note:** this is the inbound key for callers of this service. It is
-> distinct from `HMA_API_KEY`, which is the outbound key the service
-> uses when forwarding to the downstream n8n webhook.
-
 ---
 
 ## `GET /healthz`  — Liveness
 
 **Tags:** `system`
 
-Cheap, dependency-free liveness probe. Does not call the local HMA API or the
-downstream webhook.
+Cheap, dependency-free liveness probe. Does not call the local HMA API.
 
 **Response — 200 OK**
 
@@ -57,30 +52,24 @@ downstream webhook.
 
 ---
 
-## `GET /config`  — Effective configuration (secrets masked)
+## `GET /config`  — Effective configuration
 
 **Tags:** `system`
 
-Returns the resolved configuration the service is using. Useful for debugging
-"did my env var take effect?". The API key is replaced with `"***"` if set,
-or `""` if unset.
+Returns the resolved, non-secret configuration the service is using.
+Useful for debugging "did my env var take effect?". The inbound
+`HMA_PROFILE_SYNC_API_KEY` is never echoed back — clients already know it
+because they had to send it to reach this endpoint.
 
 **Response — 200 OK**
 
 ```json
 {
   "hma_local_api_base": "http://127.0.0.1:2268",
-  "sync_post_url": "https://n8n.supover.com/webhook/api/hma-profiles/sync",
-  "hma_api_key": "***",
   "hma_http_timeout": 30,
   "hma_log_level": "INFO"
 }
 ```
-
-`sync_post_url` is the **resolved** URL the service will POST to (the result
-of `resolve_sync_post_url` applied to the `HMA_PROFILES_SYNC_URL` env var).
-The raw base URL is intentionally omitted — only the resolved, final URL is
-shown.
 
 ---
 
@@ -88,9 +77,8 @@ shown.
 
 **Tags:** `profiles`
 
-Fetches profiles from the local HideMyAcc API and returns them mapped to the
-sync row shape — the exact rows that would be POSTed to the n8n webhook by
-`/sync`. **Does not** forward anything downstream.
+Fetches profiles from the local HideMyAcc API and returns them mapped to a
+flat row shape (one row per profile, all string fields).
 
 **Query parameters**
 
@@ -258,86 +246,39 @@ Invoke-RestMethod -Method Delete -Uri http://127.0.0.1:8000/profiles `
 
 ---
 
-## `POST /sync`  — Run the full pipeline
-
-**Tags:** `sync`
-
-Fetches profiles from local HMA, maps them, and POSTs the result to the n8n
-webhook. The downstream URL is resolved via `resolve_sync_post_url`.
-
-**Query parameters**
-
-| Name      | Type   | Default | Description                                                          |
-|-----------|--------|---------|----------------------------------------------------------------------|
-| `dry_run` | `bool` | `false` | If `true`, perform GET + map and **skip** the downstream POST.       |
-
-**Response — 200 OK**
-
-```json
-{
-  "rows_fetched": 12,
-  "rows_forwarded": 12,
-  "dry_run": false,
-  "sync_url": "https://n8n.supover.com/webhook/api/hma-profiles/sync",
-  "downstream_status": 200,
-  "downstream_body": "{\"ok\":true}"
-}
-```
-
-Field semantics:
-
-- `rows_fetched` — number of profiles returned by the local HMA API.
-- `rows_forwarded` — number of rows actually sent downstream. `0` on
-  `dry_run=true` or when `rows_fetched == 0`.
-- `dry_run` — echo of the query flag.
-- `sync_url` — the resolved POST URL that was (or would have been) used.
-- `downstream_status` — HTTP status code returned by the n8n webhook, or
-  `null` if `dry_run` or `rows_fetched == 0`.
-- `downstream_body` — first ~4 KB of the downstream response body, or `null`.
-
-**Errors**
-
-| Status | When                                                              |
-|--------|-------------------------------------------------------------------|
-| `400`  | `dry_run=false` and `HMA_API_KEY` is empty.                       |
-| `502`  | Local HMA API or the downstream webhook failed (network error, non-2xx response, malformed response). |
-
----
-
 ## Conventions
 
 - All timestamps (if added later) will be ISO-8601 UTC.
 - All endpoints accept and return `application/json`.
-- The service is bound to `127.0.0.1` by default. There is **no
-  authentication** in this iteration — do not expose it publicly without
-  adding an API-key dependency first.
+- The `x-api-key` header is required on every call (see
+  [Authentication](#authentication) above).
 
 ---
 
 ## Examples
 
-### Preview what would be synced
+> The examples below assume `HMA_PROFILE_SYNC_API_KEY` is exported in your
+> shell. Pipe through `jq` if you want pretty output.
+
+### List mapped profile rows
 
 ```bash
-curl -s -X POST 'http://127.0.0.1:8000/sync?dry_run=true' | jq
-```
-
-### Trigger a real sync
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/sync | jq
+curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  http://127.0.0.1:8000/profiles | jq
 ```
 
 ### Delete a profile
 
 ```bash
-curl -s -X DELETE http://127.0.0.1:8000/profiles/abc123 | jq
+curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  http://127.0.0.1:8000/profiles/abc123 | jq
 ```
 
 ### Batch-delete profiles
 
 ```bash
 curl -s -X DELETE http://127.0.0.1:8000/profiles \
+  -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"profile_ids": ["abc123", "def456"]}' | jq
 ```
@@ -345,5 +286,6 @@ curl -s -X DELETE http://127.0.0.1:8000/profiles \
 ### Inspect mapped rows with passwords revealed (local debug only)
 
 ```bash
-curl -s 'http://127.0.0.1:8000/profiles?reveal=true' | jq
+curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  'http://127.0.0.1:8000/profiles?reveal=true' | jq
 ```

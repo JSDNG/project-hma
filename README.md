@@ -1,15 +1,14 @@
 # project-hma
 
-A small **FastAPI** service that wraps the HideMyAcc (HMA) profile sync
-pipeline as an HTTP API.
+A small **FastAPI** service that wraps the local **HideMyAcc (HMA)** REST
+API as an authenticated HTTP layer.
 
 The service is **stateless** — it does not persist anything. It is a thin
-HTTP layer in front of:
+HTTP layer in front of the local HideMyAcc REST API
+(`http://127.0.0.1:2268` by default), with an `x-api-key` gate so the
+endpoints can be exposed beyond localhost.
 
-1. The local HideMyAcc REST API (`GET /profiles` on `127.0.0.1:2268` by default)
-2. A downstream n8n webhook (`POST .../api/hma-profiles/sync`)
-
-All sync logic lives in `app/hma_sync.py`; the route layer in `app/routes.py`
+All HMA helpers live in `app/hma_sync.py`; the route layer in `app/routes.py`
 is a thin translation between HTTP and those pure functions.
 
 ---
@@ -17,14 +16,12 @@ is a thin translation between HTTP and those pure functions.
 ## Features
 
 - `GET /healthz` — liveness check
-- `GET /config` — effective runtime configuration (secrets masked)
+- `GET /config` — effective runtime configuration
 - `GET /profiles` — fetch profiles from local HMA and return the mapped rows
   (passwords masked by default, optional `?reveal=true`)
 - `DELETE /profiles/{profile_id}` — delete one profile from the local HMA API
 - `DELETE /profiles` — batch-delete (best-effort) for a JSON array of IDs;
   returns per-ID success/failure
-- `POST /sync` — full pipeline: fetch → map → forward to the n8n webhook;
-  supports `dry_run=true` to skip the forward
 - Auto-generated **OpenAPI docs** at `/docs` (Swagger UI) and `/redoc`
 - Pydantic-validated request/response models with explicit status codes
 - Configuration via environment variables (`.env` supported through
@@ -112,17 +109,15 @@ notepad .env
 | Variable                  | Default                              | Purpose                                                                 |
 |---------------------------|--------------------------------------|-------------------------------------------------------------------------|
 | `HMA_LOCAL_API_BASE`      | `http://127.0.0.1:2268`              | Local HideMyAcc REST API base.                                          |
-| `HMA_PROFILES_SYNC_URL`   | `https://n8n.supover.com/webhook`    | Downstream webhook base; `/api/hma-profiles/sync` is appended automatically. |
-| `HMA_API_KEY`             | *(empty)*                            | **Required** for non-dry-run `/sync` calls. Sent as `X-Api-Key` header to the downstream n8n webhook. |
 | `HMA_PROFILE_SYNC_API_KEY`| *(empty)*                            | **Required.** Shared secret that incoming clients must send as `x-api-key` on every request to this service. If unset, the server rejects all requests with HTTP 500 (fail-closed). |
 | `HMA_HTTP_TIMEOUT`        | `30`                                 | HTTP client timeout (seconds).                                          |
 | `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
 
 Setting variables directly (without a `.env`) — for one-off runs:
 
-- **macOS / Linux (bash/zsh):** `export HMA_API_KEY=...`
-- **Windows PowerShell:** `$env:HMA_API_KEY = "..."`
-- **Windows Command Prompt:** `set HMA_API_KEY=...`
+- **macOS / Linux (bash/zsh):** `export HMA_PROFILE_SYNC_API_KEY=...`
+- **Windows PowerShell:** `$env:HMA_PROFILE_SYNC_API_KEY = "..."`
+- **Windows Command Prompt:** `set HMA_PROFILE_SYNC_API_KEY=...`
 
 ---
 
@@ -167,14 +162,6 @@ curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/healthz
 # Preview mapped rows (passwords masked)
 curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/profiles
 
-# Dry run — fetch + map, do not POST downstream
-curl -s -X POST -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
-  "http://127.0.0.1:8000/sync?dry_run=true"
-
-# Full sync — forward to the n8n webhook
-curl -s -X POST -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
-  http://127.0.0.1:8000/sync
-
 # Delete a single profile
 curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
   http://127.0.0.1:8000/profiles/abc123
@@ -191,7 +178,7 @@ On **PowerShell** you can also use `Invoke-RestMethod`:
 ```powershell
 $h = @{ "x-api-key" = $env:HMA_PROFILE_SYNC_API_KEY }
 Invoke-RestMethod -Headers $h http://127.0.0.1:8000/healthz
-Invoke-RestMethod -Headers $h -Method Post "http://127.0.0.1:8000/sync?dry_run=true"
+Invoke-RestMethod -Headers $h http://127.0.0.1:8000/profiles
 ```
 
 ---

@@ -13,8 +13,7 @@ from .routes import router
 
 tags_metadata = [
     {"name": "system", "description": "Liveness and effective-configuration endpoints."},
-    {"name": "profiles", "description": "Inspect mapped profile rows."},
-    {"name": "sync", "description": "Run the fetch-and-forward sync pipeline."},
+    {"name": "profiles", "description": "Inspect and delete HideMyAcc profiles."},
 ]
 
 
@@ -26,9 +25,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="HMA Profile Sync API",
+    title="HMA Profile API",
     version="1.0.0",
-    summary="Stateless HTTP wrapper over the HideMyAcc profile sync pipeline.",
+    summary="Stateless HTTP wrapper around the local HideMyAcc profile API.",
     openapi_tags=tags_metadata,
     lifespan=lifespan,
 )

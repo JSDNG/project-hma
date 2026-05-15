@@ -18,8 +18,6 @@ TEST_SYNC_API_KEY = "test-sync-key"
 def settings() -> Settings:
     return Settings(
         hma_local_api_base="http://hma.test",
-        hma_profiles_sync_url="http://sync.test/webhook",
-        hma_api_key="test-key",
         hma_profile_sync_api_key=TEST_SYNC_API_KEY,
         hma_http_timeout=5,
         hma_log_level="INFO",
