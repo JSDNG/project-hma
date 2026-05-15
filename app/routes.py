@@ -7,6 +7,7 @@ from typing import Annotated
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from .auth import require_api_key
 from .config import Settings, get_settings
 from .hma_sync import (
     delete_profile,
@@ -59,7 +60,7 @@ def _interpret_hma_delete(
         f"code={code}): {snippet}"
     )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_key)])
 
 
 @router.get("/healthz", response_model=HealthResponse, tags=["system"])

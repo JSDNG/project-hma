@@ -33,6 +33,7 @@ project-hma/
 │   ├── schemas.py                    # Pydantic request/response models
 │   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET/DELETE),
 │                                     # /profiles/{id} (DELETE), /sync
+│   ├── auth.py                       # require_api_key dependency (x-api-key gate)
 │   └── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
 │                                     # post_sync, delete_profile, resolve_sync_post_url,
 │                                     # mask_secrets, setup_logging
@@ -164,6 +165,8 @@ instead of leaking 500s:
 | Downstream webhook unreachable                     | `502`  | `{ "detail": "Sync webhook error: ..." }`         |
 | Downstream webhook returns non-2xx                 | `502`  | `{ "detail": "Sync webhook responded HTTP N" }`   |
 | `/sync` without `dry_run=true` and missing API key | `400`  | `{ "detail": "HMA_API_KEY is not configured" }`   |
+| Missing / wrong `x-api-key` header                 | `401`  | `{ "detail": "Invalid or missing x-api-key" }`    |
+| Server `HMA_PROFILE_SYNC_API_KEY` not configured   | `500`  | `{ "detail": "HMA_PROFILE_SYNC_API_KEY is not configured on the server" }` |
 | Unexpected exception                               | `500`  | FastAPI default                                   |
 
 ---
@@ -197,14 +200,23 @@ standard HTTP codes.
 
 ## Security
 
+- **Inbound authentication.** Every request must carry an `x-api-key` header
+  matching `HMA_PROFILE_SYNC_API_KEY`. The check lives in `app/auth.py` as
+  the `require_api_key` dependency and is attached at the `APIRouter` level
+  so it applies uniformly to every endpoint, including `/healthz`. Header
+  comparison uses `secrets.compare_digest` to avoid timing leaks. The gate
+  is **fail-closed**: if the server has no key configured, all requests are
+  rejected with `500` rather than silently letting traffic through.
+- **Two keys, two directions.** `HMA_PROFILE_SYNC_API_KEY` authenticates
+  inbound callers of this service. `HMA_API_KEY` is the outbound credential
+  the service sends to the downstream n8n webhook on `/sync`. They are not
+  interchangeable.
 - **Secrets are never returned in responses.** Passwords in profile rows and
   the API key in `/config` are masked. A `?reveal=true` flag on `/profiles`
   unmasks passwords, intended for local debugging — not for production
-  exposure. Authentication is **out of scope** for this iteration; bind to
-  `127.0.0.1` until that lands.
-- No hardcoded API key defaults anywhere in source. `HMA_API_KEY` (env var or
-  `.env`) is the only source of truth; non-dry-run `/sync` calls return `400`
-  if it is missing.
+  exposure.
+- No hardcoded API key defaults anywhere in source. Both `HMA_API_KEY` and
+  `HMA_PROFILE_SYNC_API_KEY` come only from the environment (or `.env`).
 
 ---
 

@@ -15,6 +15,33 @@ Interactive docs are auto-generated:
 
 ---
 
+## Authentication
+
+Every request to this service **must** include the header
+
+```
+x-api-key: <HMA_PROFILE_SYNC_API_KEY>
+```
+
+where the value matches the server's `HMA_PROFILE_SYNC_API_KEY`
+environment variable. Comparison is constant-time
+(`secrets.compare_digest`).
+
+| Situation                                    | Status | Body                                                                 |
+|----------------------------------------------|--------|----------------------------------------------------------------------|
+| Header missing                               | `401`  | `{ "detail": "Invalid or missing x-api-key" }`                       |
+| Header present but value does not match      | `401`  | `{ "detail": "Invalid or missing x-api-key" }`                       |
+| Server has no `HMA_PROFILE_SYNC_API_KEY` set | `500`  | `{ "detail": "HMA_PROFILE_SYNC_API_KEY is not configured on the server" }` |
+
+The gate is enforced at the router level, so it applies to **every**
+endpoint listed below — including `/healthz`.
+
+> **Note:** this is the inbound key for callers of this service. It is
+> distinct from `HMA_API_KEY`, which is the outbound key the service
+> uses when forwarding to the downstream n8n webhook.
+
+---
+
 ## `GET /healthz`  — Liveness
 
 **Tags:** `system`

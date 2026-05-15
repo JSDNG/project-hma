@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     hma_local_api_base: str = "http://127.0.0.1:2268"
     hma_profiles_sync_url: str = "https://n8n.supover.com/webhook"
     hma_api_key: str = ""
+    hma_profile_sync_api_key: str = ""
     hma_http_timeout: int = 30
     hma_log_level: str = "INFO"
 

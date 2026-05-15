@@ -113,7 +113,8 @@ notepad .env
 |---------------------------|--------------------------------------|-------------------------------------------------------------------------|
 | `HMA_LOCAL_API_BASE`      | `http://127.0.0.1:2268`              | Local HideMyAcc REST API base.                                          |
 | `HMA_PROFILES_SYNC_URL`   | `https://n8n.supover.com/webhook`    | Downstream webhook base; `/api/hma-profiles/sync` is appended automatically. |
-| `HMA_API_KEY`             | *(empty)*                            | **Required** for non-dry-run `/sync` calls. Sent as `X-Api-Key` header. |
+| `HMA_API_KEY`             | *(empty)*                            | **Required** for non-dry-run `/sync` calls. Sent as `X-Api-Key` header to the downstream n8n webhook. |
+| `HMA_PROFILE_SYNC_API_KEY`| *(empty)*                            | **Required.** Shared secret that incoming clients must send as `x-api-key` on every request to this service. If unset, the server rejects all requests with HTTP 500 (fail-closed). |
 | `HMA_HTTP_TIMEOUT`        | `30`                                 | HTTP client timeout (seconds).                                          |
 | `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
 
@@ -142,28 +143,45 @@ Then open:
 
 > `--reload` is for development. Drop it for production runs.
 
+### Authentication
+
+Every endpoint requires the caller to send an `x-api-key` header whose
+value equals the server's `HMA_PROFILE_SYNC_API_KEY`. Missing or wrong
+keys return `401`; if the server itself has no key configured it
+fail-closes with `500`.
+
+```
+x-api-key: <HMA_PROFILE_SYNC_API_KEY>
+```
+
 ### Quick test (cross-platform)
 
-`curl` works on macOS, Linux, and modern Windows. `jq` is optional.
+`curl` works on macOS, Linux, and modern Windows. `jq` is optional. The
+examples below pull the key from your shell — `export
+HMA_PROFILE_SYNC_API_KEY=...` first, or substitute the value inline.
 
 ```bash
 # Health check
-curl -s http://127.0.0.1:8000/healthz
+curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/healthz
 
 # Preview mapped rows (passwords masked)
-curl -s http://127.0.0.1:8000/profiles
+curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/profiles
 
 # Dry run — fetch + map, do not POST downstream
-curl -s -X POST "http://127.0.0.1:8000/sync?dry_run=true"
+curl -s -X POST -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  "http://127.0.0.1:8000/sync?dry_run=true"
 
 # Full sync — forward to the n8n webhook
-curl -s -X POST http://127.0.0.1:8000/sync
+curl -s -X POST -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  http://127.0.0.1:8000/sync
 
 # Delete a single profile
-curl -s -X DELETE http://127.0.0.1:8000/profiles/abc123
+curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  http://127.0.0.1:8000/profiles/abc123
 
 # Batch-delete profiles
 curl -s -X DELETE http://127.0.0.1:8000/profiles \
+  -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"profile_ids": ["abc123", "def456"]}'
 ```
@@ -171,8 +189,9 @@ curl -s -X DELETE http://127.0.0.1:8000/profiles \
 On **PowerShell** you can also use `Invoke-RestMethod`:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/healthz
-Invoke-RestMethod -Method Post "http://127.0.0.1:8000/sync?dry_run=true"
+$h = @{ "x-api-key" = $env:HMA_PROFILE_SYNC_API_KEY }
+Invoke-RestMethod -Headers $h http://127.0.0.1:8000/healthz
+Invoke-RestMethod -Headers $h -Method Post "http://127.0.0.1:8000/sync?dry_run=true"
 ```
 
 ---

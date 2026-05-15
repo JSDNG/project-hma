@@ -368,3 +368,46 @@ def test_sync_returns_502_on_downstream_network_error(client):
         r = client.post("/sync")
     assert r.status_code == 502
     assert "Sync webhook error" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# x-api-key auth (HMA_PROFILE_SYNC_API_KEY)
+# ---------------------------------------------------------------------------
+
+
+def test_auth_missing_header_returns_401(unauth_client):
+    r = unauth_client.get("/healthz")
+    assert r.status_code == 401
+    assert "x-api-key" in r.json()["detail"]
+
+
+def test_auth_wrong_key_returns_401(unauth_client):
+    r = unauth_client.get("/healthz", headers={"x-api-key": "wrong"})
+    assert r.status_code == 401
+
+
+def test_auth_correct_key_allows_request(unauth_client):
+    r = unauth_client.get("/healthz", headers={"x-api-key": "test-sync-key"})
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_auth_unconfigured_server_rejects_everything(unauth_client, settings):
+    """Fail-closed: empty HMA_PROFILE_SYNC_API_KEY rejects all requests."""
+    settings.hma_profile_sync_api_key = ""
+    r = unauth_client.get("/healthz", headers={"x-api-key": "anything"})
+    assert r.status_code == 500
+    assert "HMA_PROFILE_SYNC_API_KEY" in r.json()["detail"]
+
+
+def test_auth_gate_applies_to_all_routes(unauth_client):
+    """Spot-check that the router-level dependency covers every endpoint."""
+    for method, path in [
+        ("GET", "/healthz"),
+        ("GET", "/config"),
+        ("GET", "/profiles"),
+        ("DELETE", "/profiles/abc"),
+        ("POST", "/sync"),
+    ]:
+        r = unauth_client.request(method, path)
+        assert r.status_code == 401, f"{method} {path} was not gated"
