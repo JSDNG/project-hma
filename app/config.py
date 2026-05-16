@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     hma_http_timeout: int = 30
     hma_log_level: str = "INFO"
 
+    # Outbound sync to the Supover profile-hma endpoint, used by the
+    # scheduled job in scripts/sync_to_supover.py. The runner script reads
+    # these directly — the FastAPI service itself does not touch them.
+    supover_sync_url: str = "https://ai.supover.com/api/profile-hma/sync"
+    supover_api_key: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

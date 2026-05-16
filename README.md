@@ -112,6 +112,8 @@ notepad .env
 | `HMA_PROFILE_SYNC_API_KEY`| *(empty)*                            | **Required.** Shared secret that incoming clients must send as `x-api-key` on every request to this service. If unset, the server rejects all requests with HTTP 500 (fail-closed). |
 | `HMA_HTTP_TIMEOUT`        | `30`                                 | HTTP client timeout (seconds).                                          |
 | `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
+| `SUPOVER_SYNC_URL`        | `https://ai.supover.com/api/profile-hma/sync` | Remote endpoint the scheduled job posts mapped profile rows to.         |
+| `SUPOVER_API_KEY`         | *(empty)*                            | `x-api-key` value sent on every POST to `SUPOVER_SYNC_URL`. Required by the scheduled job; if unset, the runner aborts before making any HTTP call. The FastAPI service itself never reads this variable. |
 
 Setting variables directly (without a `.env`) — for one-off runs:
 
@@ -209,6 +211,86 @@ development.
   --host 127.0.0.1 --port 8000`).
 
 ---
+
+## Scheduled Supover sync (Windows Task Scheduler)
+
+A standalone runner at `scripts/sync_to_supover.py` pulls profiles from the
+local HMA API, maps them through the same `profile_to_sync_row` helper used
+by `GET /profiles`, and POSTs `{count, data}` to `SUPOVER_SYNC_URL` with
+the `x-api-key: SUPOVER_API_KEY` header. It does **not** require the
+FastAPI service to be running.
+
+### One-time setup on Windows 10 Pro
+
+1. Confirm the project venv exists and the deps are installed (see
+   [Install](#install)). The launcher prefers `.venv\Scripts\python.exe`
+   and falls back to `python` on `PATH` if the venv is missing.
+2. Fill in `SUPOVER_API_KEY` in your local `.env`.
+3. Smoke-test the runner once by hand (from the project root):
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m scripts.sync_to_supover
+   ```
+
+   You should see `Supover accepted N row(s)` in the console and in
+   `logs\supover_sync.log`.
+4. Register the scheduled task (open PowerShell **as your normal user** —
+   admin is not required for a user-scoped task):
+
+   ```powershell
+   .\scripts\setup_task.ps1
+   ```
+
+   Pass `-RunWhetherLoggedOn` if you want the sync to fire even when you
+   are signed out (uses S4U; no password is stored):
+
+   ```powershell
+   .\scripts\setup_task.ps1 -RunWhetherLoggedOn
+   ```
+
+5. Verify the task fires:
+
+   ```powershell
+   Start-ScheduledTask -TaskName HMA-Supover-Sync
+   Get-ScheduledTaskInfo -TaskName HMA-Supover-Sync | Select-Object LastRunTime, LastTaskResult
+   Get-Content .\logs\supover_sync.log -Tail 20
+   ```
+
+   `LastTaskResult` of `0` is success. Other exit codes:
+   `1` = config error, `2` = local HMA unreachable / bad body,
+   `3` = Supover unreachable or returned non-2xx.
+
+6. To remove the task later:
+
+   ```powershell
+   .\scripts\unregister_task.ps1
+   ```
+
+### Files involved
+
+| Path                            | Purpose                                                            |
+|---------------------------------|--------------------------------------------------------------------|
+| `scripts/sync_to_supover.py`    | Python entry point; reads `.env`, calls HMA, posts to Supover.     |
+| `scripts/run_sync.bat`          | Launcher Task Scheduler executes — activates the venv, sets cwd.   |
+| `scripts/setup_task.ps1`        | Registers the `HMA-Supover-Sync` task (00:00 + 12:00 daily).       |
+| `scripts/unregister_task.ps1`   | Removes the scheduled task.                                        |
+| `logs/supover_sync.log`         | Structured logs from the Python script.                            |
+| `logs/supover_sync.bat.log`     | Wrapper-level log (start/finish timestamps + exit code).           |
+
+### Manual GUI alternative (optional)
+
+If you prefer the Task Scheduler GUI over the PowerShell setup script:
+
+1. Open **Task Scheduler** → **Create Task…** (not "Create Basic Task").
+2. **General** — name it `HMA-Supover-Sync`. Pick a logon mode
+   ("Run only when user is logged on" is fine for the simple case).
+3. **Triggers** — add two **Daily** triggers, one at `00:00:00` and one at
+   `12:00:00`.
+4. **Actions** — **Start a program**, browse to
+   `<project root>\scripts\run_sync.bat`. In **Start in (optional)** put
+   the project root (the folder that contains `.env`).
+5. **Settings** — leave defaults; optionally tick "Run task as soon as
+   possible after a scheduled start is missed".
 
 ## Tests
 

@@ -17,8 +17,13 @@
 
 ## Non-goals
 
-- Persistence, rate limiting, background jobs, multi-tenant config —
-  explicitly out of scope for this iteration.
+- Persistence, rate limiting, multi-tenant config — explicitly out of
+  scope for this iteration.
+- In-process background jobs. The Supover sync runs as an external,
+  OS-scheduled script (`scripts/sync_to_supover.py`), not as an in-app
+  scheduler thread. This keeps the FastAPI service stateless and
+  request-driven; see [Scheduled Supover sync](#scheduled-supover-sync)
+  below.
 
 ---
 
@@ -34,13 +39,22 @@ project-hma/
 │   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET),
 │                                     # /profiles (DELETE batch), /profiles/{id} (DELETE)
 │   ├── auth.py                       # require_api_key dependency (x-api-key gate)
-│   └── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
-│                                     # delete_profile, parse_hma_body, setup_logging
+│   ├── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
+│   │                                 # delete_profile, parse_hma_body, setup_logging
+│   └── supover_sync.py               # Pure helper: push_to_supover, build_supover_payload
+│                                     # (used by the scheduled runner; not by the API)
+│
+├── scripts/                          # OS-scheduled jobs (run outside the FastAPI process)
+│   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover, twice daily
+│   ├── run_sync.bat                  # Windows Task Scheduler launcher (sets cwd, activates venv)
+│   ├── setup_task.ps1                # Register the HMA-Supover-Sync scheduled task
+│   └── unregister_task.ps1           # Remove the scheduled task
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
 │   ├── test_hma_sync.py              # Unit tests for the pure helpers
-│   └── test_routes.py                # Endpoint tests with upstream HTTP mocked
+│   ├── test_routes.py                # Endpoint tests with upstream HTTP mocked
+│   └── test_supover_sync.py          # Unit tests for push_to_supover / build_supover_payload
 │
 ├── docs/
 │   ├── ARCHITECTURE.md               # This file
@@ -229,6 +243,31 @@ Run with `pytest -q` from the project root (any OS).
 manager, using `setup_logging` from `app/hma_sync.py`. Uvicorn's own loggers
 are left alone. By default logs go to stdout; pass a `log_file=Path(...)` to
 `setup_logging` to also tee them to disk.
+
+---
+
+## Scheduled Supover sync
+
+`scripts/sync_to_supover.py` is a standalone job that runs **outside** the
+FastAPI process. It reuses the in-tree pure helpers so there is exactly one
+mapping path:
+
+1. `app.config.get_settings()` — same `.env`, same env vars.
+2. `app.hma_sync.fetch_profiles` against `HMA_LOCAL_API_BASE` directly
+   (the script does **not** call the FastAPI `/profiles` endpoint, so the
+   service does not need to be running).
+3. `app.hma_sync.profile_to_sync_row` for each item.
+4. `app.supover_sync.push_to_supover` — POST `{count, data}` to
+   `SUPOVER_SYNC_URL` with `x-api-key: SUPOVER_API_KEY`.
+
+The runner exits with a meaningful code so Task Scheduler's "Last Run
+Result" column is useful (`0` ok, `1` config, `2` HMA, `3` Supover) and
+appends to `logs/supover_sync.log`. Scheduling itself is delegated to the
+OS — on Windows that is Task Scheduler, registered via
+`scripts/setup_task.ps1` with two daily triggers at `00:00` and `12:00`.
+
+The FastAPI app does not import `supover_sync` and does not start any
+background thread — keeping the runtime stateless and request-driven.
 
 ---
 

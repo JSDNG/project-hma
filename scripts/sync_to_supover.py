@@ -1,0 +1,114 @@
+"""Scheduled job: pull HMA profiles, push to Supover.
+
+Entry point invoked by Windows Task Scheduler twice a day (00:00 and 12:00).
+Standalone — does not require the FastAPI service to be running. The script:
+
+1. Loads settings from .env (same file the API uses).
+2. Calls the local HMA REST API at ``HMA_LOCAL_API_BASE`` directly.
+3. Maps each profile through ``profile_to_sync_row`` (same mapping as
+   ``GET /profiles``).
+4. POSTs ``{count, data}`` to ``SUPOVER_SYNC_URL`` with the
+   ``x-api-key: SUPOVER_API_KEY`` header.
+
+Exit codes (so Task Scheduler "Last Run Result" is meaningful):
+  0  success — Supover accepted the payload (2xx).
+  1  configuration error (missing key / URL).
+  2  local HMA unreachable or returned a malformed body.
+  3  Supover unreachable or returned non-2xx.
+
+Logs go to stdout AND ``logs/supover_sync.log`` next to the project root.
+
+Run manually:
+    python -m scripts.sync_to_supover
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+
+import requests
+
+# Make ``app.*`` importable when this script is launched with the project
+# root as the working directory (the launcher .bat does ``cd %~dp0..``).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.config import get_settings  # noqa: E402
+from app.hma_sync import (  # noqa: E402
+    fetch_profiles,
+    profile_to_sync_row,
+    setup_logging,
+)
+from app.supover_sync import push_to_supover  # noqa: E402
+
+LOG_FILE = PROJECT_ROOT / "logs" / "supover_sync.log"
+
+EXIT_OK = 0
+EXIT_CONFIG = 1
+EXIT_HMA = 2
+EXIT_SUPOVER = 3
+
+
+def main() -> int:
+    settings = get_settings()
+    setup_logging(log_file=LOG_FILE, level=settings.hma_log_level)
+    log = logging.getLogger("sync_to_supover")
+
+    if not settings.supover_api_key.strip():
+        log.error("SUPOVER_API_KEY is not configured — aborting.")
+        return EXIT_CONFIG
+    if not settings.supover_sync_url.strip():
+        log.error("SUPOVER_SYNC_URL is empty — aborting.")
+        return EXIT_CONFIG
+
+    session = requests.Session()
+
+    # 1) Pull profiles from local HMA.
+    try:
+        profiles = fetch_profiles(
+            session, settings.hma_local_api_base, settings.hma_http_timeout
+        )
+    except requests.RequestException as exc:
+        log.error("Local HMA API unreachable: %s", exc)
+        return EXIT_HMA
+    except ValueError as exc:
+        log.error("Local HMA API returned an invalid body: %s", exc)
+        return EXIT_HMA
+
+    rows = [profile_to_sync_row(p) for p in profiles]
+    log.info("Mapped %d profile row(s); pushing to Supover.", len(rows))
+
+    # 2) Push to Supover.
+    try:
+        resp = push_to_supover(
+            session,
+            settings.supover_sync_url,
+            settings.supover_api_key,
+            rows,
+            settings.hma_http_timeout,
+        )
+    except ValueError as exc:
+        log.error("Refusing to POST: %s", exc)
+        return EXIT_CONFIG
+    except requests.RequestException as exc:
+        log.error("Supover endpoint unreachable: %s", exc)
+        return EXIT_SUPOVER
+
+    if not (200 <= resp.status_code < 300):
+        snippet = (resp.text or "")[:500]
+        log.error(
+            "Supover returned HTTP %s: %s", resp.status_code, snippet
+        )
+        return EXIT_SUPOVER
+
+    log.info(
+        "Supover accepted %d row(s) (HTTP %s).", len(rows), resp.status_code
+    )
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
