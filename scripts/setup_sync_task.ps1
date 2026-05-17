@@ -47,8 +47,8 @@ $action = New-ScheduledTaskAction `
     -WorkingDirectory $ProjectRoot
 
 $triggers = @(
-    New-ScheduledTaskTrigger -Daily -At 00:00,
-    New-ScheduledTaskTrigger -Daily -At 12:00
+    (New-ScheduledTaskTrigger -Daily -At 00:00),
+    (New-ScheduledTaskTrigger -Daily -At 12:00)
 )
 
 $settings = New-ScheduledTaskSettingsSet `
