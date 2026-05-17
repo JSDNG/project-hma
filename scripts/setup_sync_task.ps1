@@ -20,10 +20,10 @@
     signed in. No password is stored.
 
     .EXAMPLE
-    PS> .\scripts\setup_task.ps1
+    PS> .\scripts\setup_sync_task.ps1
 
     .EXAMPLE
-    PS> .\scripts\setup_task.ps1 -RunWhetherLoggedOn
+    PS> .\scripts\setup_sync_task.ps1 -RunWhetherLoggedOn
 #>
 
 [CmdletBinding()]

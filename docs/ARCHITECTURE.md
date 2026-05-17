@@ -47,8 +47,12 @@ project-hma/
 ├── scripts/                          # OS-scheduled jobs (run outside the FastAPI process)
 │   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover, twice daily
 │   ├── run_sync.bat                  # Windows Task Scheduler launcher (sets cwd, activates venv)
-│   ├── setup_task.ps1                # Register the HMA-Supover-Sync scheduled task
-│   └── unregister_task.ps1           # Remove the scheduled task
+│   ├── setup_sync_task.ps1           # Register the HMA-Supover-Sync scheduled task
+│   ├── unregister_sync_task.ps1      # Remove the HMA-Supover-Sync scheduled task
+│   ├── trigger_supover_pending.py    # CLI entry point: GET Supover /pending, daily 08:00
+│   ├── run_pending.bat               # Windows Task Scheduler launcher for the pending trigger
+│   ├── setup_pending_task.ps1        # Register the HMA-Supover-Pending scheduled task
+│   └── unregister_pending_task.ps1   # Remove the HMA-Supover-Pending scheduled task
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
@@ -264,7 +268,7 @@ The runner exits with a meaningful code so Task Scheduler's "Last Run
 Result" column is useful (`0` ok, `1` config, `2` HMA, `3` Supover) and
 appends to `logs/supover_sync.log`. Scheduling itself is delegated to the
 OS — on Windows that is Task Scheduler, registered via
-`scripts/setup_task.ps1` with two daily triggers at `00:00` and `12:00`.
+`scripts/setup_sync_task.ps1` with two daily triggers at `00:00` and `12:00`.
 
 The FastAPI app does not import `supover_sync` and does not start any
 background thread — keeping the runtime stateless and request-driven.

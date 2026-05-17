@@ -239,14 +239,14 @@ FastAPI service to be running.
    admin is not required for a user-scoped task):
 
    ```powershell
-   .\scripts\setup_task.ps1
+   .\scripts\setup_sync_task.ps1
    ```
 
    Pass `-RunWhetherLoggedOn` if you want the sync to fire even when you
    are signed out (uses S4U; no password is stored):
 
    ```powershell
-   .\scripts\setup_task.ps1 -RunWhetherLoggedOn
+   .\scripts\setup_sync_task.ps1 -RunWhetherLoggedOn
    ```
 
 5. Verify the task fires:
@@ -264,7 +264,7 @@ FastAPI service to be running.
 6. To remove the task later:
 
    ```powershell
-   .\scripts\unregister_task.ps1
+   .\scripts\unregister_sync_task.ps1
    ```
 
 ### Files involved
@@ -273,8 +273,8 @@ FastAPI service to be running.
 |---------------------------------|--------------------------------------------------------------------|
 | `scripts/sync_to_supover.py`    | Python entry point; reads `.env`, calls HMA, posts to Supover.     |
 | `scripts/run_sync.bat`          | Launcher Task Scheduler executes — activates the venv, sets cwd.   |
-| `scripts/setup_task.ps1`        | Registers the `HMA-Supover-Sync` task (00:00 + 12:00 daily).       |
-| `scripts/unregister_task.ps1`   | Removes the scheduled task.                                        |
+| `scripts/setup_sync_task.ps1`   | Registers the `HMA-Supover-Sync` task (00:00 + 12:00 daily).       |
+| `scripts/unregister_sync_task.ps1` | Removes the scheduled task.                                     |
 | `logs/supover_sync.log`         | Structured logs from the Python script.                            |
 | `logs/supover_sync.bat.log`     | Wrapper-level log (start/finish timestamps + exit code).           |
 

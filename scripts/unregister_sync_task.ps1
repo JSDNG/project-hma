@@ -3,7 +3,7 @@
     Remove the HMA-Supover-Sync scheduled task.
 
     .EXAMPLE
-    PS> .\scripts\unregister_task.ps1
+    PS> .\scripts\unregister_sync_task.ps1
 #>
 
 [CmdletBinding()]
