@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $existing) {
-    Write-Host "No scheduled task named '$TaskName' was found — nothing to do."
+    Write-Host "No scheduled task named '$TaskName' was found - nothing to do."
     return
 }
 

@@ -10,7 +10,7 @@
     and uses the project root as the working directory. By default the
     task runs only when the current user is logged on (InteractiveToken).
     Pass -RunWhetherLoggedOn to switch to S4U so it fires while you are
-    signed out as well — Supover is a public endpoint, so the network
+    signed out as well - Supover is a public endpoint, so the network
     restriction that S4U normally imposes does not block this job.
 
     .PARAMETER TaskName
