@@ -19,11 +19,6 @@ class Settings(BaseSettings):
     supover_sync_url: str = "https://ai.supover.com/api/profile-hma/sync"
     supover_api_key: str = ""
 
-    # GET endpoint fired once a day at 08:00 by
-    # scripts/trigger_supover_pending.py so Supover picks up and processes
-    # pending rows. Reuses supover_api_key for the x-api-key header.
-    supover_pending_url: str = "https://ai.supover.com/api/profile-hma/pending"
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

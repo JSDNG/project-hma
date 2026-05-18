@@ -114,7 +114,6 @@ notepad .env
 | `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
 | `SUPOVER_SYNC_URL`        | `https://ai.supover.com/api/profile-hma/sync` | Remote endpoint the scheduled job posts mapped profile rows to.         |
 | `SUPOVER_API_KEY`         | *(empty)*                            | `x-api-key` value sent on every POST to `SUPOVER_SYNC_URL`. Required by the scheduled job; if unset, the runner aborts before making any HTTP call. The FastAPI service itself never reads this variable. |
-| `SUPOVER_PENDING_URL`     | `https://ai.supover.com/api/profile-hma/pending` | Remote endpoint the daily 08:00 trigger job sends a GET to (with `x-api-key: SUPOVER_API_KEY`) so Supover processes pending rows. |
 
 Setting variables directly (without a `.env`) — for one-off runs:
 
@@ -290,86 +289,6 @@ If you prefer the Task Scheduler GUI over the PowerShell setup script:
 4. **Actions** — **Start a program**, browse to
    `<project root>\scripts\run_sync.bat`. In **Start in (optional)** put
    the project root (the folder that contains `.env`).
-5. **Settings** — leave defaults; optionally tick "Run task as soon as
-   possible after a scheduled start is missed".
-
-## Scheduled Supover pending trigger (Windows Task Scheduler)
-
-A second standalone runner at `scripts/trigger_supover_pending.py` fires a
-single `GET` to `SUPOVER_PENDING_URL` (with the `x-api-key: SUPOVER_API_KEY`
-header) once a day at **08:00**, so Supover picks up and processes the
-rows the twice-daily sync pushed in. Same fail-closed contract as
-`sync_to_supover.py`; the FastAPI service does not need to be running.
-
-### One-time setup on Windows 10 Pro
-
-1. Confirm the project venv exists and the deps are installed (see
-   [Install](#install)). The launcher prefers `.venv\Scripts\python.exe`
-   and falls back to `python` on `PATH` if the venv is missing.
-2. Make sure `SUPOVER_API_KEY` is set in `.env` (same key the sync job
-   uses) and `SUPOVER_PENDING_URL` is present (default is fine for
-   production).
-3. Smoke-test the runner once by hand (from the project root):
-
-   ```powershell
-   .\.venv\Scripts\python.exe -m scripts.trigger_supover_pending
-   ```
-
-   You should see `Supover /pending acknowledged (HTTP 200, …)` in the
-   console and in `logs\supover_pending.log`.
-4. Register the scheduled task (open PowerShell **as your normal user** —
-   admin is not required for a user-scoped task):
-
-   ```powershell
-   .\scripts\setup_pending_task.ps1
-   ```
-
-   Pass `-RunWhetherLoggedOn` if you want it to fire even when you are
-   signed out (uses S4U; no password is stored):
-
-   ```powershell
-   .\scripts\setup_pending_task.ps1 -RunWhetherLoggedOn
-   ```
-
-5. Verify the task fires:
-
-   ```powershell
-   Start-ScheduledTask -TaskName HMA-Supover-Pending
-   Get-ScheduledTaskInfo -TaskName HMA-Supover-Pending | Select-Object LastRunTime, LastTaskResult
-   Get-Content .\logs\supover_pending.log -Tail 20
-   ```
-
-   `LastTaskResult` of `0` is success. Other exit codes:
-   `1` = config error, `3` = Supover unreachable or returned non-2xx.
-
-6. To remove the task later:
-
-   ```powershell
-   .\scripts\unregister_pending_task.ps1
-   ```
-
-### Files involved
-
-| Path                                     | Purpose                                                            |
-|------------------------------------------|--------------------------------------------------------------------|
-| `scripts/trigger_supover_pending.py`     | Python entry point; reads `.env`, GETs `SUPOVER_PENDING_URL`.      |
-| `scripts/run_pending.bat`                | Launcher Task Scheduler executes — activates the venv, sets cwd.   |
-| `scripts/setup_pending_task.ps1`         | Registers the `HMA-Supover-Pending` task (daily 08:00).            |
-| `scripts/unregister_pending_task.ps1`    | Removes the scheduled task.                                        |
-| `logs/supover_pending.log`               | Structured logs from the Python script.                            |
-| `logs/supover_pending.bat.log`           | Wrapper-level log (start/finish timestamps + exit code).           |
-
-### Manual GUI alternative (optional)
-
-If you prefer the Task Scheduler GUI over the PowerShell setup script:
-
-1. Open **Task Scheduler** → **Create Task…** (not "Create Basic Task").
-2. **General** — name it `HMA-Supover-Pending`. Pick a logon mode
-   ("Run only when user is logged on" is fine for the simple case).
-3. **Triggers** — add a single **Daily** trigger at `08:00:00`.
-4. **Actions** — **Start a program**, browse to
-   `<project root>\scripts\run_pending.bat`. In **Start in (optional)**
-   put the project root (the folder that contains `.env`).
 5. **Settings** — leave defaults; optionally tick "Run task as soon as
    possible after a scheduled start is missed".
 

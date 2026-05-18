@@ -48,11 +48,7 @@ project-hma/
 │   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover, twice daily
 │   ├── run_sync.bat                  # Windows Task Scheduler launcher (sets cwd, activates venv)
 │   ├── setup_sync_task.ps1           # Register the HMA-Supover-Sync scheduled task
-│   ├── unregister_sync_task.ps1      # Remove the HMA-Supover-Sync scheduled task
-│   ├── trigger_supover_pending.py    # CLI entry point: GET Supover /pending, daily 08:00
-│   ├── run_pending.bat               # Windows Task Scheduler launcher for the pending trigger
-│   ├── setup_pending_task.ps1        # Register the HMA-Supover-Pending scheduled task
-│   └── unregister_pending_task.ps1   # Remove the HMA-Supover-Pending scheduled task
+│   └── unregister_sync_task.ps1      # Remove the HMA-Supover-Sync scheduled task
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
