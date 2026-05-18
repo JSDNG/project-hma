@@ -20,6 +20,40 @@ DEFAULT_HMA_BASE = "http://127.0.0.1:2268"
 DEFAULT_PROFILES_PATH = "/profiles"
 DEFAULT_TIMEOUT = 30
 
+MIN_TCP_PORT = 1
+MAX_TCP_PORT = 65535
+
+
+def _coerce_port(port_val: Any, profile_id: str) -> str:
+    """Return a valid TCP port as a string, or '' for missing/invalid input.
+
+    Why: Supover's `profile_hma.port` is an INT column in MySQL strict mode,
+    so a single out-of-range value (e.g. a corrupted upstream record with a
+    timestamp or IP digits in `proxy.port`) aborts the entire batch insert
+    with SQLSTATE 22003. Filter here so one bad profile can't sink the sync.
+    """
+    if port_val in (None, "", 0):
+        return ""
+    try:
+        port = int(port_val)
+    except (TypeError, ValueError):
+        logging.warning(
+            "Profile %s: non-numeric proxy.port %r; sending empty port",
+            profile_id,
+            port_val,
+        )
+        return ""
+    if not (MIN_TCP_PORT <= port <= MAX_TCP_PORT):
+        logging.warning(
+            "Profile %s: proxy.port %d outside %d-%d; sending empty port",
+            profile_id,
+            port,
+            MIN_TCP_PORT,
+            MAX_TCP_PORT,
+        )
+        return ""
+    return str(port)
+
 
 def setup_logging(log_file: Path | None = None, level: str | int = "INFO") -> None:
     """Configure root logging for the API service."""
@@ -50,8 +84,8 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
     falls back to autoProxy* fields for other modes / older payloads.
     """
     proxy = _proxy_dict(profile)
-    port_val = proxy.get("port")
-    port_str = "" if port_val in (None, "", 0) else str(port_val)
+    profile_id = str(profile.get("id", ""))
+    port_str = _coerce_port(proxy.get("port"), profile_id)
 
     host = (proxy.get("host") or proxy.get("autoProxyServer") or "").strip()
     username = proxy.get("username") or proxy.get("autoProxyUsername") or ""
@@ -67,7 +101,7 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
         user_agent = str(user_agent)
 
     return {
-        "profile_id": str(profile.get("id", "")),
+        "profile_id": profile_id,
         "profile_name": str(profile.get("name", "")),
         "proxy": host,
         "port": port_str,

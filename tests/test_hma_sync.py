@@ -68,6 +68,64 @@ def test_profile_to_sync_row_handles_zero_port():
     assert row["port"] == ""
 
 
+def test_profile_to_sync_row_accepts_string_port():
+    row = profile_to_sync_row(
+        {"id": "x", "name": "y", "proxy": {"port": "3128", "host": "h"}}
+    )
+    assert row["port"] == "3128"
+
+
+def test_profile_to_sync_row_accepts_boundary_ports():
+    low = profile_to_sync_row(
+        {"id": "x", "name": "y", "proxy": {"port": 1, "host": "h"}}
+    )
+    high = profile_to_sync_row(
+        {"id": "x", "name": "y", "proxy": {"port": 65535, "host": "h"}}
+    )
+    assert low["port"] == "1"
+    assert high["port"] == "65535"
+
+
+def test_profile_to_sync_row_drops_port_above_tcp_max(caplog):
+    with caplog.at_level("WARNING"):
+        row = profile_to_sync_row(
+            {"id": "bad-1", "name": "y", "proxy": {"port": 70000, "host": "h"}}
+        )
+    assert row["port"] == ""
+    assert "bad-1" in caplog.text
+    assert "70000" in caplog.text
+
+
+def test_profile_to_sync_row_drops_huge_port(caplog):
+    # The Supover incident: an upstream record with a non-port number leaking
+    # into proxy.port (>INT max) used to abort the entire batch INSERT.
+    with caplog.at_level("WARNING"):
+        row = profile_to_sync_row(
+            {"id": "bad-2", "name": "y", "proxy": {"port": 2_147_483_648, "host": "h"}}
+        )
+    assert row["port"] == ""
+    assert "bad-2" in caplog.text
+
+
+def test_profile_to_sync_row_drops_negative_port(caplog):
+    with caplog.at_level("WARNING"):
+        row = profile_to_sync_row(
+            {"id": "bad-3", "name": "y", "proxy": {"port": -1, "host": "h"}}
+        )
+    assert row["port"] == ""
+    assert "bad-3" in caplog.text
+
+
+def test_profile_to_sync_row_drops_non_numeric_port(caplog):
+    with caplog.at_level("WARNING"):
+        row = profile_to_sync_row(
+            {"id": "bad-4", "name": "y", "proxy": {"port": "abc", "host": "h"}}
+        )
+    assert row["port"] == ""
+    assert "bad-4" in caplog.text
+    assert "abc" in caplog.text
+
+
 def test_profile_to_sync_row_non_string_user_agent():
     row = profile_to_sync_row({"id": "x", "name": "y", "userAgent": 12345})
     assert row["user_agent"] == "12345"
