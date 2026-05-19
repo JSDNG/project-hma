@@ -94,8 +94,7 @@ treat the key as sensitive.
       "proxy": "proxy.example.com",
       "port": "8080",
       "username": "user1",
-      "password": "s3cret",
-      "user_agent": "Mozilla/5.0 ..."
+      "password": "s3cret"
     },
     {
       "profile_id": "def456",
@@ -103,8 +102,7 @@ treat the key as sensitive.
       "proxy": "",
       "port": "",
       "username": "",
-      "password": "",
-      "user_agent": ""
+      "password": ""
     }
   ]
 }

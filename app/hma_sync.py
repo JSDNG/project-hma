@@ -91,15 +91,6 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
     username = proxy.get("username") or proxy.get("autoProxyUsername") or ""
     password = proxy.get("password") or proxy.get("autoProxyPassword") or ""
 
-    user_agent = (
-        profile.get("userAgent")
-        or profile.get("user_agent")
-        or profile.get("userAgentOverride")
-        or ""
-    )
-    if not isinstance(user_agent, str):
-        user_agent = str(user_agent)
-
     return {
         "profile_id": profile_id,
         "profile_name": str(profile.get("name", "")),
@@ -107,7 +98,6 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
         "port": port_str,
         "username": str(username),
         "password": str(password),
-        "user_agent": user_agent,
     }
 
 

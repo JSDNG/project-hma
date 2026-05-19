@@ -123,7 +123,7 @@ same instance and tests can override the dependency cleanly.
 Pydantic models that mirror what the service returns. Notable types:
 
 - `ProfileRow` — one mapped row (`profile_id`, `profile_name`, `proxy`, `port`,
-  `username`, `password`, `user_agent`). The proxy `password` is returned
+  `username`, `password`). The proxy `password` is returned
   in clear text; access control is provided by the `x-api-key` gate.
 - `ConfigView` — non-secret settings snapshot
   (`hma_local_api_base`, `hma_http_timeout`, `hma_log_level`). The inbound

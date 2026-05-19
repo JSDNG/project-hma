@@ -22,7 +22,6 @@ def _row(profile_id: str = "p1", profile_name: str = "n1") -> dict[str, str]:
         "port": "9",
         "username": "u",
         "password": "s",
-        "user_agent": "ua",
     }
 
 

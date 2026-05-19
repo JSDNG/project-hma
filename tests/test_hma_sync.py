@@ -22,7 +22,6 @@ def test_profile_to_sync_row_with_proxy_dict():
             "username": "user",
             "password": "secret",
         },
-        "userAgent": "Mozilla/5.0",
     }
     assert profile_to_sync_row(profile) == {
         "profile_id": "abc",
@@ -31,7 +30,6 @@ def test_profile_to_sync_row_with_proxy_dict():
         "port": "8080",
         "username": "user",
         "password": "secret",
-        "user_agent": "Mozilla/5.0",
     }
 
 
@@ -51,7 +49,6 @@ def test_profile_to_sync_row_falls_back_to_auto_proxy_fields():
     assert row["password"] == "auto-pass"
     assert row["profile_id"] == "123"
     assert row["port"] == ""
-    assert row["user_agent"] == ""
 
 
 def test_profile_to_sync_row_handles_missing_proxy():
@@ -124,11 +121,6 @@ def test_profile_to_sync_row_drops_non_numeric_port(caplog):
     assert row["port"] == ""
     assert "bad-4" in caplog.text
     assert "abc" in caplog.text
-
-
-def test_profile_to_sync_row_non_string_user_agent():
-    row = profile_to_sync_row({"id": "x", "name": "y", "userAgent": 12345})
-    assert row["user_agent"] == "12345"
 
 
 def test_delete_profile_builds_correct_url():

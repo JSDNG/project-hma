@@ -22,7 +22,6 @@ class ProfileRow(BaseModel):
     port: str
     username: str
     password: str
-    user_agent: str
 
 
 class ProfilesResponse(BaseModel):
