@@ -39,9 +39,9 @@ project-hma/
 │   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET),
 │                                     # /profiles (DELETE batch), /profiles/{id} (DELETE)
 │   ├── auth.py                       # require_api_key dependency (x-api-key gate)
-│   ├── hma_sync.py                   # Pure service module: fetch_profiles, profile_to_sync_row,
-│   │                                 # delete_profile, parse_hma_body, setup_logging
-│   └── supover_sync.py               # Pure helper: push_to_supover, build_supover_payload
+│   ├── hma_sync.py                   # Pure service module: fetch_profiles, fetch_profiles_response,
+│   │                                 # profile_to_sync_row, delete_profile, parse_hma_body, setup_logging
+│   └── supover_sync.py               # Pure helper: push_to_supover
 │                                     # (used by the scheduled runner; not by the API)
 │
 ├── scripts/                          # OS-scheduled jobs (run outside the FastAPI process)
@@ -54,7 +54,7 @@ project-hma/
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
 │   ├── test_hma_sync.py              # Unit tests for the pure helpers
 │   ├── test_routes.py                # Endpoint tests with upstream HTTP mocked
-│   └── test_supover_sync.py          # Unit tests for push_to_supover / build_supover_payload
+│   └── test_supover_sync.py          # Unit tests for push_to_supover
 │
 ├── docs/
 │   ├── ARCHITECTURE.md               # This file
@@ -92,7 +92,8 @@ where bug fixes and behavior changes belong.
 
 Public surface:
 
-- `fetch_profiles(session, base_url, timeout) -> list[dict]`
+- `fetch_profiles(session, base_url, timeout) -> list[dict]` — validated `data` list, used by the FastAPI route
+- `fetch_profiles_response(session, base_url, timeout) -> Any` — raw HMA JSON body, used by the scheduled sync
 - `profile_to_sync_row(profile: dict) -> dict[str, str]`
 - `delete_profile(session, base_url, profile_id, timeout) -> requests.Response`
 - `parse_hma_body(resp) -> dict | None` — JSON-parses an HMA response into
@@ -249,16 +250,15 @@ are left alone. By default logs go to stdout; pass a `log_file=Path(...)` to
 ## Scheduled Supover sync
 
 `scripts/sync_to_supover.py` is a standalone job that runs **outside** the
-FastAPI process. It reuses the in-tree pure helpers so there is exactly one
-mapping path:
+FastAPI process. It forwards the HMA response verbatim:
 
 1. `app.config.get_settings()` — same `.env`, same env vars.
-2. `app.hma_sync.fetch_profiles` against `HMA_LOCAL_API_BASE` directly
-   (the script does **not** call the FastAPI `/profiles` endpoint, so the
-   service does not need to be running).
-3. `app.hma_sync.profile_to_sync_row` for each item.
-4. `app.supover_sync.push_to_supover` — POST `{count, data}` to
-   `SUPOVER_SYNC_URL` with `x-api-key: SUPOVER_API_KEY`.
+2. `app.hma_sync.fetch_profiles_response` against `HMA_LOCAL_API_BASE`
+   directly (the script does **not** call the FastAPI `/profiles` endpoint,
+   so the service does not need to be running). Returns the raw HMA JSON body.
+3. `app.supover_sync.push_to_supover` — POST that body **unchanged** to
+   `SUPOVER_SYNC_URL` with `x-api-key: SUPOVER_API_KEY`. No mapping, no
+   envelope construction.
 
 The runner exits with a meaningful code so Task Scheduler's "Last Run
 Result" column is useful (`0` ok, `1` config, `2` HMA, `3` Supover) and

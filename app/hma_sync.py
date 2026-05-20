@@ -130,6 +130,22 @@ def fetch_profiles(
     return data
 
 
+def fetch_profiles_response(
+    session: requests.Session, base_url: str, timeout: int
+) -> Any:
+    """Return the full HMA ``GET /profiles`` JSON body, untouched.
+
+    Used by the scheduled Supover sync, which forwards whatever HMA returned
+    verbatim. No shape validation, no data extraction — the caller is
+    responsible for handling whatever HMA sent back.
+    """
+    url = base_url.rstrip("/") + DEFAULT_PROFILES_PATH
+    logging.info("GET %s", url)
+    r = session.get(url, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+
 def delete_profile(
     session: requests.Session,
     base_url: str,

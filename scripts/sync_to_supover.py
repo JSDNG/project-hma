@@ -1,14 +1,12 @@
-"""Scheduled job: pull HMA profiles, push to Supover.
+"""Scheduled job: pull HMA profiles, forward raw response to Supover.
 
 Entry point invoked by Windows Task Scheduler twice a day (00:00 and 12:00).
 Standalone — does not require the FastAPI service to be running. The script:
 
 1. Loads settings from .env (same file the API uses).
 2. Calls the local HMA REST API at ``HMA_LOCAL_API_BASE`` directly.
-3. Maps each profile through ``profile_to_sync_row`` (same mapping as
-   ``GET /profiles``).
-4. POSTs ``{count, data}`` to ``SUPOVER_SYNC_URL`` with the
-   ``x-api-key: SUPOVER_API_KEY`` header.
+3. POSTs HMA's ``/profiles`` response body unchanged to ``SUPOVER_SYNC_URL``
+   with the ``x-api-key: SUPOVER_API_KEY`` header.
 
 Exit codes (so Task Scheduler "Last Run Result" is meaningful):
   0  success — Supover accepted the payload (2xx).
@@ -38,8 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config import get_settings  # noqa: E402
 from app.hma_sync import (  # noqa: E402
-    fetch_profiles,
-    profile_to_sync_row,
+    fetch_profiles_response,
     setup_logging,
 )
 from app.supover_sync import push_to_supover  # noqa: E402
@@ -66,9 +63,9 @@ def main() -> int:
 
     session = requests.Session()
 
-    # 1) Pull profiles from local HMA.
+    # 1) Pull the raw HMA /profiles response.
     try:
-        profiles = fetch_profiles(
+        payload = fetch_profiles_response(
             session, settings.hma_local_api_base, settings.hma_http_timeout
         )
     except requests.RequestException as exc:
@@ -78,16 +75,13 @@ def main() -> int:
         log.error("Local HMA API returned an invalid body: %s", exc)
         return EXIT_HMA
 
-    rows = [profile_to_sync_row(p) for p in profiles]
-    log.info("Mapped %d profile row(s); pushing to Supover.", len(rows))
-
-    # 2) Push to Supover.
+    # 2) Forward verbatim to Supover.
     try:
         resp = push_to_supover(
             session,
             settings.supover_sync_url,
             settings.supover_api_key,
-            rows,
+            payload,
             settings.hma_http_timeout,
         )
     except ValueError as exc:
@@ -104,9 +98,7 @@ def main() -> int:
         )
         return EXIT_SUPOVER
 
-    log.info(
-        "Supover accepted %d row(s) (HTTP %s).", len(rows), resp.status_code
-    )
+    log.info("Supover accepted payload (HTTP %s).", resp.status_code)
     return EXIT_OK
 
 

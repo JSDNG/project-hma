@@ -112,7 +112,7 @@ notepad .env
 | `HMA_PROFILE_SYNC_API_KEY`| *(empty)*                            | **Required.** Shared secret that incoming clients must send as `x-api-key` on every request to this service. If unset, the server rejects all requests with HTTP 500 (fail-closed). |
 | `HMA_HTTP_TIMEOUT`        | `30`                                 | HTTP client timeout (seconds).                                          |
 | `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
-| `SUPOVER_SYNC_URL`        | `https://ai.supover.com/api/profile-hma/sync` | Remote endpoint the scheduled job posts mapped profile rows to.         |
+| `SUPOVER_SYNC_URL`        | `https://ai.supover.com/api/hma/profiles/sync` | Remote endpoint the scheduled job forwards the raw HMA `/profiles` response to. |
 | `SUPOVER_API_KEY`         | *(empty)*                            | `x-api-key` value sent on every POST to `SUPOVER_SYNC_URL`. Required by the scheduled job; if unset, the runner aborts before making any HTTP call. The FastAPI service itself never reads this variable. |
 
 Setting variables directly (without a `.env`) — for one-off runs:
@@ -214,11 +214,11 @@ development.
 
 ## Scheduled Supover sync (Windows Task Scheduler)
 
-A standalone runner at `scripts/sync_to_supover.py` pulls profiles from the
-local HMA API, maps them through the same `profile_to_sync_row` helper used
-by `GET /profiles`, and POSTs `{count, data}` to `SUPOVER_SYNC_URL` with
-the `x-api-key: SUPOVER_API_KEY` header. It does **not** require the
-FastAPI service to be running.
+A standalone runner at `scripts/sync_to_supover.py` calls the local HMA
+`/profiles` endpoint and POSTs its **raw response body** — exactly what HMA
+returned, no mapping or re-shaping — to `SUPOVER_SYNC_URL` with the
+`x-api-key: SUPOVER_API_KEY` header. It does **not** require the FastAPI
+service to be running.
 
 ### One-time setup on Windows 10 Pro
 
@@ -232,8 +232,8 @@ FastAPI service to be running.
    .\.venv\Scripts\python.exe -m scripts.sync_to_supover
    ```
 
-   You should see `Supover accepted N row(s)` in the console and in
-   `logs\supover_sync.log`.
+   You should see `Supover accepted payload (HTTP 200).` in the console and
+   in `logs\supover_sync.log`.
 4. Register the scheduled task (open PowerShell **as your normal user** —
    admin is not required for a user-scoped task):
 
