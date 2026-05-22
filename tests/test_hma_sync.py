@@ -8,7 +8,10 @@ import pytest
 
 from app.hma_sync import (
     delete_profile,
+    interpret_start_response,
     profile_to_sync_row,
+    start_profile,
+    stop_profile,
 )
 
 
@@ -140,3 +143,116 @@ def test_delete_profile_rejects_empty_id():
     with pytest.raises(ValueError):
         delete_profile(session, "http://hma.test", "   ", 5)
     session.delete.assert_not_called()
+
+
+def test_start_profile_builds_correct_url():
+    session = MagicMock()
+    start_profile(session, "http://hma.test/", "abc123", 10)
+    session.post.assert_called_once_with(
+        "http://hma.test/profiles/start/abc123", timeout=10
+    )
+
+
+def test_start_profile_strips_trailing_slash_from_base():
+    session = MagicMock()
+    start_profile(session, "http://hma.test", "id1", 5)
+    session.post.assert_called_once_with(
+        "http://hma.test/profiles/start/id1", timeout=5
+    )
+
+
+def test_start_profile_rejects_empty_id():
+    session = MagicMock()
+    with pytest.raises(ValueError):
+        start_profile(session, "http://hma.test", "  ", 5)
+    session.post.assert_not_called()
+
+
+def test_stop_profile_builds_correct_url():
+    session = MagicMock()
+    stop_profile(session, "http://hma.test", "abc123", 10)
+    session.post.assert_called_once_with(
+        "http://hma.test/profiles/stop/abc123", timeout=10
+    )
+
+
+def test_stop_profile_rejects_empty_id():
+    session = MagicMock()
+    with pytest.raises(ValueError):
+        stop_profile(session, "http://hma.test", "", 5)
+    session.post.assert_not_called()
+
+
+def _start_resp(
+    status_code: int = 200,
+    json_body: dict | None = None,
+    text: str = "",
+) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    if json_body is None:
+        resp.json.side_effect = ValueError("not json")
+    else:
+        resp.json.return_value = json_body
+    return resp
+
+
+def test_interpret_start_response_happy_path():
+    body = {
+        "code": 1,
+        "data": {
+            "success": True,
+            "port": 27999,
+            "wsUrl": "ws://127.0.0.1:27999/devtools/browser/abc",
+            "userAgent": "Mozilla/5.0",
+            "majorVersion": 113,
+        },
+    }
+    result = interpret_start_response(_start_resp(200, body))
+    assert result.ok is True
+    assert result.ws_url == "ws://127.0.0.1:27999/devtools/browser/abc"
+    assert result.port == 27999
+    assert result.major_version == 113
+    assert result.user_agent == "Mozilla/5.0"
+    assert result.error is None
+
+
+def test_interpret_start_response_rejects_non_2xx():
+    result = interpret_start_response(_start_resp(500, text="boom"))
+    assert result.ok is False
+    assert "HTTP 500" in (result.error or "")
+
+
+def test_interpret_start_response_rejects_non_json_body():
+    result = interpret_start_response(_start_resp(200, json_body=None, text="oops"))
+    assert result.ok is False
+    assert "non-JSON" in (result.error or "")
+
+
+def test_interpret_start_response_rejects_wrong_code():
+    body = {"code": 0, "data": {"success": True, "wsUrl": "ws://x"}}
+    result = interpret_start_response(_start_resp(200, body))
+    assert result.ok is False
+    assert "code=0" in (result.error or "")
+
+
+def test_interpret_start_response_rejects_data_success_false():
+    body = {"code": 1, "data": {"success": False, "wsUrl": "ws://x"}}
+    result = interpret_start_response(_start_resp(200, body))
+    assert result.ok is False
+    assert "success=False" in (result.error or "")
+
+
+def test_interpret_start_response_rejects_missing_ws_url():
+    body = {"code": 1, "data": {"success": True, "wsUrl": ""}}
+    result = interpret_start_response(_start_resp(200, body))
+    assert result.ok is False
+    assert "wsUrl" in (result.error or "")
+
+
+def test_interpret_start_response_rejects_non_object_data():
+    body = {"code": 1, "data": "nope"}
+    result = interpret_start_response(_start_resp(200, body))
+    assert result.ok is False
+    assert "data" in (result.error or "")
