@@ -49,14 +49,13 @@ from app.hma_sync import (  # noqa: E402
     start_profile,
     stop_profile,
 )
-from app.profile_actions import open_seller_bills  # noqa: E402
+from app.profile_actions import check_seller_status  # noqa: E402
 from app.supover_stores import (  # noqa: E402
     fetch_dead_stores_with_balance,
     first_profile_id,
 )
 
 LOG_FILE = PROJECT_ROOT / "logs" / "open_first_dead_store_tiktok.log"
-DWELL_SECONDS = 300
 
 EXIT_OK = 0
 EXIT_CONFIG = 1
@@ -130,19 +129,12 @@ def main() -> int:
     exit_code = EXIT_OK
     try:
         try:
-            open_seller_bills(result.ws_url, log)
+            check_seller_status(result.ws_url, log)
+        except KeyboardInterrupt:
+            log.info("Interrupted by user; stopping profile early.")
         except Exception as exc:  # noqa: BLE001 — playwright raises broad types
             log.error("Playwright error: %s", exc)
             exit_code = EXIT_PLAYWRIGHT
-        else:
-            log.info(
-                "Holding browser open for %ds before stopping the profile.",
-                DWELL_SECONDS,
-            )
-            try:
-                time.sleep(DWELL_SECONDS)
-            except KeyboardInterrupt:
-                log.info("Dwell interrupted by user; stopping profile early.")
     finally:
         try:
             stop_resp = stop_profile(
