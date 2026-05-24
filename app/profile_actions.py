@@ -26,6 +26,7 @@ SELLER_BILLS_URL = "https://seller-us.tiktok.com/finance/bills"
 HEALTH_CENTER_URL = "https://seller-us.tiktok.com/health-center"
 
 PENDING_BALANCE_XPATH = "//div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[1]/div/div/div[1]/div[1]/div[2]/span"
+ON_HOLD_XPATH = "//div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[1]/div/div/div[1]/div[5]/div[2]/span"
 BANK_ACCOUNT_XPATH = "//div[1]/div[2]/main/div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[2]/div/div/div/div[2]/div/div[2]/div/span[2]"
 ACCOUNT_STATUS_XPATH = "//div[1]/section/nav/div/div/div/div/div/div/div[1]/div[1]/div[2]"
 
@@ -79,18 +80,27 @@ def check_seller_status(ws_url: str, log: logging.Logger) -> None:
             locator.wait_for(state="visible", timeout=15_000)
             pending_balance = locator.text_content()
         except Exception:  # noqa: BLE001
-            log.warning("Pending balance element not found on bills page.")
+            pass
 
         time.sleep(5)
 
-        # --- Bills page: bank account ---
+        on_hold: str | None = None
+        try:
+            locator = page.locator(f"xpath={ON_HOLD_XPATH}")
+            locator.wait_for(state="visible", timeout=15_000)
+            on_hold = locator.text_content()
+        except Exception:  # noqa: BLE001
+            pass
+
+        time.sleep(5)
+
         bank_account: str | None = None
         try:
             locator = page.locator(f"xpath={BANK_ACCOUNT_XPATH}")
             locator.wait_for(state="visible", timeout=15_000)
             bank_account = locator.text_content()
         except Exception:  # noqa: BLE001
-            log.warning("Bank account element not found on bills page.")
+            pass
 
         time.sleep(5)
 
@@ -106,13 +116,14 @@ def check_seller_status(ws_url: str, log: logging.Logger) -> None:
             if text == "Account deactivated":
                 account_status = text
         except Exception:  # noqa: BLE001
-            log.warning("Account status element not found on health-center page.")
+            pass
 
         time.sleep(5)
 
         log.info(
-            "pending_balance=%s bank_account=%s account_status=%s",
+            "pending_balance=%s on_hold=%s bank_account=%s account_status=%s",
             pending_balance,
+            on_hold,
             bank_account,
             account_status,
         )
