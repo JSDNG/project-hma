@@ -9,7 +9,6 @@ import requests
 
 from app.supover_stores import (
     fetch_dead_stores_with_balance,
-    first_profile_id,
 )
 API_KEY_HEADER = "x-api-key"
 
@@ -155,31 +154,3 @@ def test_fetch_propagates_network_error():
         fetch_dead_stores_with_balance(session, URL, "secret", 10, "x-api-key")
 
 
-def test_first_profile_id_returns_first_non_empty():
-    stores = [
-        _row(profile_id=None),
-        _row(profile_id="   "),
-        _row(profile_id="abc123"),
-        _row(profile_id="def456"),
-    ]
-    assert first_profile_id(stores) == "abc123"
-
-
-def test_first_profile_id_skips_rows_without_profile_hma():
-    stores = [
-        {"store_id": 1},  # no profile_hma at all
-        _row(profile_id=None),  # profile_hma is None
-        _row(profile_id="picked"),
-    ]
-    assert first_profile_id(stores) == "picked"
-
-
-def test_first_profile_id_raises_when_none_eligible():
-    stores = [_row(profile_id=None), _row(profile_id="")]
-    with pytest.raises(LookupError):
-        first_profile_id(stores)
-
-
-def test_first_profile_id_raises_on_empty_list():
-    with pytest.raises(LookupError):
-        first_profile_id([])

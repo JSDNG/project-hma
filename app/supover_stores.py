@@ -90,35 +90,6 @@ def fetch_dead_stores_with_balance(
     return data
 
 
-def first_profile_id(stores: list[dict[str, Any]]) -> str:
-    """Return the first non-empty ``profile_hma.profile_id`` from ``stores``."""
-    for store in stores:
-        profile_hma = store.get("profile_hma")
-        if not isinstance(profile_hma, dict):
-            continue
-        pid = profile_hma.get("profile_id")
-        if isinstance(pid, str) and pid.strip():
-            return pid.strip()
-    raise LookupError("No store carries a non-empty profile_hma.profile_id")
-
-
-def first_store_and_profile_id(stores: list[dict[str, Any]]) -> tuple[int, str]:
-    """Return ``(store_id, profile_id)`` for the first eligible store."""
-    for store in stores:
-        profile_hma = store.get("profile_hma")
-        if not isinstance(profile_hma, dict):
-            continue
-        pid = profile_hma.get("profile_id")
-        if not (isinstance(pid, str) and pid.strip()):
-            continue
-        sid = store.get("store_id")
-        if sid is None:
-            continue
-        return int(sid), pid.strip()
-    raise LookupError(
-        "No store carries both a store_id and a non-empty profile_hma.profile_id"
-    )
-
 
 def all_store_and_profile_ids(
     stores: list[dict[str, Any]],

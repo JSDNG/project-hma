@@ -44,15 +44,6 @@ def _attach_to_profile(ws_url: str) -> Iterator["BrowserContext"]:
             browser.close()
 
 
-def open_seller_bills(ws_url: str, log: logging.Logger, settings: "Settings") -> None:
-    """Open the TikTok Seller US bills page in a new tab on the HMA profile."""
-    with _attach_to_profile(ws_url) as context:
-        page = context.new_page()
-        page.goto(settings.tiktok_seller_bills_url, wait_until="domcontentloaded")
-        log.info(
-            "Seller bills loaded: title=%r url=%s", page.title(), page.url
-        )
-
 
 def check_seller_status(
     ws_url: str, log: logging.Logger, settings: "Settings",
