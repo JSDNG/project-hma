@@ -8,23 +8,31 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    hma_local_api_base: str = "http://127.0.0.1:2268"
-    hma_profile_sync_api_key: str = ""
+    hma_local_api_base: str = ""
+    hma_profiles_path: str = ""
     hma_http_timeout: int = 30
     hma_log_level: str = "INFO"
+    hma_start_success_code: int = 1
+    hma_delete_success_code: int = 1
+    hma_min_tcp_port: int = 1
+    hma_max_tcp_port: int = 65535
 
-    # Outbound sync to the Supover HMA-profiles endpoint, used by the
-    # scheduled job in scripts/sync_to_supover.py. The runner script reads
-    # these directly — the FastAPI service itself does not touch them.
-    supover_sync_url: str = "https://ai.supover.com/api/hma/profiles/sync"
     supover_api_key: str = ""
+    supover_api_key_header: str = ""
+    supover_sync_url: str = ""
+    supover_dead_stores_url: str = ""
+    supover_stores_sync_url: str = ""
 
-    # Full URL of Supover's dead-with-balance endpoint, consumed by
-    # scripts/open_first_dead_store_tiktok.py. Matches the SUPOVER_SYNC_URL
-    # convention: configure the entire endpoint, not a base to append to.
-    supover_dead_stores_url: str = (
-        "https://ai.supover.com/api/hma/stores/dead-with-balance"
-    )
+    tiktok_seller_bills_url: str = ""
+    tiktok_health_center_url: str = ""
+    tiktok_account_deactivated_text: str = ""
+    tiktok_element_timeout: int = 15000
+    tiktok_step_delay: int = 5
+    tiktok_dwell_seconds: int = 300
+    xpath_pending_balance: str = ""
+    xpath_on_hold: str = ""
+    xpath_bank_account: str = ""
+    xpath_account_status: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -26,29 +26,21 @@ from .schemas import (
     ProfilesResponse,
 )
 
-HMA_DELETE_SUCCESS_CODE = 1
-HMA_TEAM_PLAN_REQUIRED_DETAIL = (
-    "HMA local API requires a Team plan subscription for this endpoint "
-    "(HTTP 402, body code=0)."
-)
-
-
 def _interpret_hma_delete(
-    resp: requests.Response,
+    resp: requests.Response, delete_success_code: int,
 ) -> tuple[bool, int | None, str | None]:
-    """Return (ok, code, error_detail) for an HMA DELETE response.
-
-    - ok=True iff body.code == 1 (per HMA docs).
-    - error_detail is a route-friendly message for the failure case.
-    """
+    """Return (ok, code, error_detail) for an HMA DELETE response."""
     body = parse_hma_body(resp)
     code = body.get("code") if body else None
 
-    if code == HMA_DELETE_SUCCESS_CODE:
+    if code == delete_success_code:
         return True, code, None
 
     if resp.status_code == 402 and code == 0:
-        return False, code, HMA_TEAM_PLAN_REQUIRED_DETAIL
+        return False, code, (
+            "HMA local API requires a Team plan subscription for this endpoint "
+            "(HTTP 402, body code=0)."
+        )
 
     snippet = (resp.text or "")[:500]
     return False, code, (
@@ -79,7 +71,8 @@ def _fetch_rows(settings: Settings) -> list[dict[str, str]]:
     session = requests.Session()
     try:
         profiles = fetch_profiles(
-            session, settings.hma_local_api_base, settings.hma_http_timeout
+            session, settings.hma_local_api_base, settings.hma_http_timeout,
+            settings.hma_profiles_path,
         )
     except requests.RequestException as e:
         raise HTTPException(
@@ -89,7 +82,10 @@ def _fetch_rows(settings: Settings) -> list[dict[str, str]]:
         raise HTTPException(
             status_code=502, detail=f"Invalid HMA response: {e}"
         ) from e
-    return [profile_to_sync_row(p) for p in profiles]
+    return [
+        profile_to_sync_row(p, settings.hma_min_tcp_port, settings.hma_max_tcp_port)
+        for p in profiles
+    ]
 
 
 @router.get("/profiles", response_model=ProfilesResponse, tags=["profiles"])
@@ -120,13 +116,14 @@ def delete_one_profile(
             settings.hma_local_api_base,
             profile_id,
             settings.hma_http_timeout,
+            settings.hma_profiles_path,
         )
     except requests.RequestException as e:
         raise HTTPException(
             status_code=502, detail=f"HMA local API error: {e}"
         ) from e
 
-    ok, code, detail = _interpret_hma_delete(resp)
+    ok, code, detail = _interpret_hma_delete(resp, settings.hma_delete_success_code)
     if ok:
         return DeleteResponse(
             profile_id=profile_id,
@@ -161,6 +158,7 @@ def delete_many_profiles(
                 settings.hma_local_api_base,
                 pid,
                 settings.hma_http_timeout,
+                settings.hma_profiles_path,
             )
         except requests.RequestException as e:
             failures.append(
@@ -170,7 +168,7 @@ def delete_many_profiles(
             )
             continue
 
-        ok, _, detail = _interpret_hma_delete(resp)
+        ok, _, detail = _interpret_hma_delete(resp, settings.hma_delete_success_code)
         if ok:
             deleted_ids.append(pid)
         else:

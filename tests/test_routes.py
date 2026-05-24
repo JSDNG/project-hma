@@ -239,7 +239,7 @@ def test_delete_batch_rejects_empty_list(client):
 
 
 # ---------------------------------------------------------------------------
-# x-api-key auth (HMA_PROFILE_SYNC_API_KEY)
+# x-api-key auth (SUPOVER_API_KEY)
 # ---------------------------------------------------------------------------
 
 
@@ -261,11 +261,11 @@ def test_auth_correct_key_allows_request(unauth_client):
 
 
 def test_auth_unconfigured_server_rejects_everything(unauth_client, settings):
-    """Fail-closed: empty HMA_PROFILE_SYNC_API_KEY rejects all requests."""
-    settings.hma_profile_sync_api_key = ""
+    """Fail-closed: empty SUPOVER_API_KEY rejects all requests."""
+    settings.supover_api_key = ""
     r = unauth_client.get("/healthz", headers={"x-api-key": "anything"})
     assert r.status_code == 500
-    assert "HMA_PROFILE_SYNC_API_KEY" in r.json()["detail"]
+    assert "SUPOVER_API_KEY" in r.json()["detail"]
 
 
 def test_auth_gate_applies_to_all_routes(unauth_client):

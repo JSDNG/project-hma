@@ -16,8 +16,7 @@ from typing import Any
 
 import requests
 
-DEFAULT_SUPOVER_URL = "https://ai.supover.com/api/hma/profiles/sync"
-SUPOVER_API_KEY_HEADER = "x-api-key"
+from .helpers.http import build_api_headers, validate_api_credentials
 
 
 def push_to_supover(
@@ -26,26 +25,10 @@ def push_to_supover(
     api_key: str,
     payload: Any,
     timeout: int,
+    api_key_header: str,
 ) -> requests.Response:
-    """POST ``payload`` (the raw HMA response body) to the Supover sync endpoint.
-
-    Raises ``ValueError`` when ``api_key`` is empty so the runner fail-closes
-    instead of sending an unauthenticated request that would silently 401.
-    Network errors propagate as ``requests.RequestException`` for the caller
-    to handle.
-    """
-    key = (api_key or "").strip()
-    if not key:
-        raise ValueError("SUPOVER_API_KEY is not configured; refusing to POST")
-
-    target = (url or "").strip()
-    if not target:
-        raise ValueError("SUPOVER_SYNC_URL is empty; refusing to POST")
-
-    headers = {
-        SUPOVER_API_KEY_HEADER: key,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    """POST ``payload`` (the raw HMA response body) to the Supover sync endpoint."""
+    key, target = validate_api_credentials(api_key, url, "SUPOVER_SYNC_URL")
+    headers = build_api_headers(api_key_header, key)
     logging.info("POST %s — forwarding HMA response", target)
     return session.post(target, json=payload, headers=headers, timeout=timeout)

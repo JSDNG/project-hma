@@ -35,10 +35,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.config import get_settings  # noqa: E402
-from app.hma_sync import (  # noqa: E402
-    fetch_profiles_response,
-    setup_logging,
-)
+from app.helpers.logging import setup_logging  # noqa: E402
+from app.hma_sync import fetch_profiles_response  # noqa: E402
 from app.supover_sync import push_to_supover  # noqa: E402
 
 LOG_FILE = PROJECT_ROOT / "logs" / "supover_sync.log"
@@ -66,7 +64,8 @@ def main() -> int:
     # 1) Pull the raw HMA /profiles response.
     try:
         payload = fetch_profiles_response(
-            session, settings.hma_local_api_base, settings.hma_http_timeout
+            session, settings.hma_local_api_base, settings.hma_http_timeout,
+            settings.hma_profiles_path,
         )
     except requests.RequestException as exc:
         log.error("Local HMA API unreachable: %s", exc)
@@ -83,6 +82,7 @@ def main() -> int:
             settings.supover_api_key,
             payload,
             settings.hma_http_timeout,
+            settings.supover_api_key_header,
         )
     except ValueError as exc:
         log.error("Refusing to POST: %s", exc)

@@ -106,20 +106,38 @@ notepad .env
 
 ### Variables
 
-| Variable                  | Default                              | Purpose                                                                 |
-|---------------------------|--------------------------------------|-------------------------------------------------------------------------|
-| `HMA_LOCAL_API_BASE`      | `http://127.0.0.1:2268`              | Local HideMyAcc REST API base.                                          |
-| `HMA_PROFILE_SYNC_API_KEY`| *(empty)*                            | **Required.** Shared secret that incoming clients must send as `x-api-key` on every request to this service. If unset, the server rejects all requests with HTTP 500 (fail-closed). |
-| `HMA_HTTP_TIMEOUT`        | `30`                                 | HTTP client timeout (seconds).                                          |
-| `HMA_LOG_LEVEL`           | `INFO`                               | `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                    |
-| `SUPOVER_SYNC_URL`        | `https://ai.supover.com/api/hma/profiles/sync` | Remote endpoint the scheduled job forwards the raw HMA `/profiles` response to. |
-| `SUPOVER_API_KEY`         | *(empty)*                            | `x-api-key` value sent on every POST to `SUPOVER_SYNC_URL`. Required by the scheduled job; if unset, the runner aborts before making any HTTP call. The FastAPI service itself never reads this variable. |
+All variables are **required** in `.env` (no hardcoded defaults in code). See `.env.example` for the full list.
+
+| Variable | Purpose |
+|---|---|
+| `HMA_LOCAL_API_BASE` | Local HideMyAcc REST API base URL. |
+| `HMA_PROFILES_PATH` | HMA profiles API path (e.g. `/profiles`). |
+| `HMA_HTTP_TIMEOUT` | HTTP client timeout (seconds). |
+| `HMA_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
+| `HMA_START_SUCCESS_CODE` | HMA body `code` value for successful start. |
+| `HMA_DELETE_SUCCESS_CODE` | HMA body `code` value for successful delete. |
+| `HMA_MIN_TCP_PORT` / `HMA_MAX_TCP_PORT` | Valid TCP port range for proxy validation. |
+| `SUPOVER_API_KEY` | Shared secret for inbound `x-api-key` gate and outbound Supover calls. |
+| `SUPOVER_API_KEY_HEADER` | Header name for API key (e.g. `x-api-key`). |
+| `SUPOVER_SYNC_URL` | Endpoint for scheduled HMA profiles sync. |
+| `SUPOVER_DEAD_STORES_URL` | Endpoint to fetch dead-with-balance stores. |
+| `SUPOVER_STORES_SYNC_URL` | Endpoint to push store status data. |
+| `TIKTOK_SELLER_BILLS_URL` | TikTok Seller bills page URL. |
+| `TIKTOK_HEALTH_CENTER_URL` | TikTok health center page URL. |
+| `TIKTOK_ACCOUNT_DEACTIVATED_TEXT` | Text to match for deactivated accounts. |
+| `TIKTOK_ELEMENT_TIMEOUT` | Playwright element wait timeout (ms). |
+| `TIKTOK_STEP_DELAY` | Delay between extraction steps (seconds). |
+| `TIKTOK_DWELL_SECONDS` | Browser dwell time before stopping profile. |
+| `XPATH_PENDING_BALANCE` | XPath for pending balance element. |
+| `XPATH_ON_HOLD` | XPath for on-hold element. |
+| `XPATH_BANK_ACCOUNT` | XPath for bank account element. |
+| `XPATH_ACCOUNT_STATUS` | XPath for account status element. |
 
 Setting variables directly (without a `.env`) — for one-off runs:
 
-- **macOS / Linux (bash/zsh):** `export HMA_PROFILE_SYNC_API_KEY=...`
-- **Windows PowerShell:** `$env:HMA_PROFILE_SYNC_API_KEY = "..."`
-- **Windows Command Prompt:** `set HMA_PROFILE_SYNC_API_KEY=...`
+- **macOS / Linux (bash/zsh):** `export SUPOVER_API_KEY=...`
+- **Windows PowerShell:** `$env:SUPOVER_API_KEY = "..."`
+- **Windows Command Prompt:** `set SUPOVER_API_KEY=...`
 
 ---
 
@@ -143,34 +161,34 @@ Then open:
 ### Authentication
 
 Every endpoint requires the caller to send an `x-api-key` header whose
-value equals the server's `HMA_PROFILE_SYNC_API_KEY`. Missing or wrong
+value equals the server's `SUPOVER_API_KEY`. Missing or wrong
 keys return `401`; if the server itself has no key configured it
 fail-closes with `500`.
 
 ```
-x-api-key: <HMA_PROFILE_SYNC_API_KEY>
+x-api-key: <SUPOVER_API_KEY>
 ```
 
 ### Quick test (cross-platform)
 
 `curl` works on macOS, Linux, and modern Windows. `jq` is optional. The
 examples below pull the key from your shell — `export
-HMA_PROFILE_SYNC_API_KEY=...` first, or substitute the value inline.
+SUPOVER_API_KEY=...` first, or substitute the value inline.
 
 ```bash
 # Health check
-curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/healthz
+curl -s -H "x-api-key: $SUPOVER_API_KEY" http://127.0.0.1:8000/healthz
 
 # List mapped profile rows (proxy passwords included)
-curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" http://127.0.0.1:8000/profiles
+curl -s -H "x-api-key: $SUPOVER_API_KEY" http://127.0.0.1:8000/profiles
 
 # Delete a single profile
-curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+curl -s -X DELETE -H "x-api-key: $SUPOVER_API_KEY" \
   http://127.0.0.1:8000/profiles/abc123
 
 # Batch-delete profiles
 curl -s -X DELETE http://127.0.0.1:8000/profiles \
-  -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  -H "x-api-key: $SUPOVER_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"profile_ids": ["abc123", "def456"]}'
 ```
@@ -178,7 +196,7 @@ curl -s -X DELETE http://127.0.0.1:8000/profiles \
 On **PowerShell** you can also use `Invoke-RestMethod`:
 
 ```powershell
-$h = @{ "x-api-key" = $env:HMA_PROFILE_SYNC_API_KEY }
+$h = @{ "x-api-key" = $env:SUPOVER_API_KEY }
 Invoke-RestMethod -Headers $h http://127.0.0.1:8000/healthz
 Invoke-RestMethod -Headers $h http://127.0.0.1:8000/profiles
 ```

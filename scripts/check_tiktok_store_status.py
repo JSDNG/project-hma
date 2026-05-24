@@ -1,0 +1,204 @@
+"""Check TikTok store status for dead-with-balance HMA profiles.
+
+Flow:
+
+1. ``GET`` Supover ``SUPOVER_DEAD_STORES_URL?page=1&limit=N``.
+2. For each eligible store (has ``store_id`` and ``profile_hma.profile_id``):
+   a. ``POST`` local HMA ``/profiles/start/{profile_id}`` → extract ``wsUrl``.
+   b. Navigate to TikTok Seller bills & health-center pages, extract data.
+   c. ``POST`` extracted data back to Supover via ``/api/hma/stores/sync``.
+   d. Dwell for ``TIKTOK_DWELL_SECONDS``.
+   e. ``POST`` local HMA ``/profiles/stop/{profile_id}`` — always attempted.
+
+The HMA stop call is always attempted per profile, even when the action
+raised or the dwell was interrupted by Ctrl+C.
+
+Exit codes (Task Scheduler "Last Run Result"-friendly):
+  0  success — all profiles processed without error.
+  1  configuration error (missing key / base URL).
+  2  Supover unreachable / bad response / no eligible profile.
+  3  local HMA /profiles/start failed (at least once).
+  4  Playwright connect or navigation error (at least once).
+
+Run manually:
+    python -m scripts.check_tiktok_store_status
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+import time
+from pathlib import Path
+
+import requests
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.config import get_settings  # noqa: E402
+from app.helpers.logging import setup_logging  # noqa: E402
+from app.hma_sync import (  # noqa: E402
+    interpret_start_response,
+    start_profile,
+    stop_profile,
+)
+from app.profile_actions import check_seller_status  # noqa: E402
+from app.supover_stores import (  # noqa: E402
+    all_store_and_profile_ids,
+    fetch_dead_stores_with_balance,
+    push_store_status,
+)
+
+LOG_FILE = PROJECT_ROOT / "logs" / "check_tiktok_store_status.log"
+
+EXIT_OK = 0
+EXIT_CONFIG = 1
+EXIT_SUPOVER = 2
+EXIT_HMA = 3
+EXIT_PLAYWRIGHT = 4
+
+
+def _process_store(
+    session: requests.Session,
+    settings,
+    log: logging.Logger,
+    store_id: int,
+    profile_id: str,
+) -> int:
+    """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
+    try:
+        start_resp = start_profile(
+            session,
+            settings.hma_local_api_base,
+            profile_id,
+            settings.hma_http_timeout,
+            settings.hma_profiles_path,
+        )
+    except requests.RequestException as exc:
+        log.error("Local HMA /profiles/start unreachable: %s", exc)
+        return EXIT_HMA
+
+    result = interpret_start_response(start_resp, settings.hma_start_success_code)
+    if not result.ok:
+        log.error("HMA /profiles/start failed: %s", result.error)
+        return EXIT_HMA
+
+    assert result.ws_url is not None
+    log.info(
+        "HMA profile started: port=%s majorVersion=%s wsUrl=%s",
+        result.port,
+        result.major_version,
+        result.ws_url,
+    )
+
+    exit_code = EXIT_OK
+    try:
+        try:
+            status_data = check_seller_status(result.ws_url, log, settings)
+        except KeyboardInterrupt:
+            log.info("Interrupted by user; stopping profile early.")
+        except Exception as exc:  # noqa: BLE001
+            log.error("Playwright error: %s", exc)
+            exit_code = EXIT_PLAYWRIGHT
+        else:
+            try:
+                sync_resp = push_store_status(
+                    session,
+                    settings.supover_stores_sync_url,
+                    settings.supover_api_key,
+                    settings.hma_http_timeout,
+                    settings.supover_api_key_header,
+                    store_id=store_id,
+                    profile_id=profile_id,
+                    **status_data,
+                )
+                log.info(
+                    "Supover stores/sync responded HTTP %s: %s",
+                    sync_resp.status_code,
+                    (sync_resp.text or "")[:300],
+                )
+            except (requests.RequestException, ValueError) as exc:
+                log.error("Supover stores/sync failed: %s", exc)
+            log.info("Dwell %ds before stopping profile.", settings.tiktok_dwell_seconds)
+            try:
+                time.sleep(settings.tiktok_dwell_seconds)
+            except KeyboardInterrupt:
+                log.info("Dwell interrupted by user; stopping profile early.")
+    finally:
+        try:
+            stop_resp = stop_profile(
+                session,
+                settings.hma_local_api_base,
+                profile_id,
+                settings.hma_http_timeout,
+                settings.hma_profiles_path,
+            )
+            if not (200 <= stop_resp.status_code < 300):
+                log.warning(
+                    "HMA /profiles/stop returned HTTP %s: %s",
+                    stop_resp.status_code,
+                    (stop_resp.text or "")[:300],
+                )
+            else:
+                log.info("HMA profile stopped (HTTP %s).", stop_resp.status_code)
+        except requests.RequestException as exc:
+            log.warning("HMA /profiles/stop unreachable: %s", exc)
+
+    return exit_code
+
+
+def main() -> int:
+    settings = get_settings()
+    setup_logging(log_file=LOG_FILE, level=settings.hma_log_level)
+    log = logging.getLogger("check_tiktok_store_status")
+
+    if not settings.supover_api_key.strip():
+        log.error("SUPOVER_API_KEY is not configured — aborting.")
+        return EXIT_CONFIG
+    if not settings.supover_dead_stores_url.strip():
+        log.error("SUPOVER_DEAD_STORES_URL is empty — aborting.")
+        return EXIT_CONFIG
+
+    session = requests.Session()
+
+    try:
+        stores = fetch_dead_stores_with_balance(
+            session,
+            settings.supover_dead_stores_url,
+            settings.supover_api_key,
+            settings.hma_http_timeout,
+            settings.supover_api_key_header,
+            page=1,
+            limit=1,
+        )
+    except requests.RequestException as exc:
+        log.error("Supover endpoint unreachable: %s", exc)
+        return EXIT_SUPOVER
+    except ValueError as exc:
+        log.error("Supover returned an invalid body: %s", exc)
+        return EXIT_SUPOVER
+
+    pairs = all_store_and_profile_ids(stores)
+    if not pairs:
+        log.error("No eligible store with a non-empty profile_hma.profile_id.")
+        return EXIT_SUPOVER
+
+    log.info("Found %d eligible store(s) to process.", len(pairs))
+
+    worst_code = EXIT_OK
+    for i, (store_id, profile_id) in enumerate(pairs, 1):
+        log.info(
+            "--- Store %d/%d: store_id=%s profile_id=%s ---",
+            i, len(pairs), store_id, profile_id,
+        )
+        code = _process_store(session, settings, log, store_id, profile_id)
+        if code > worst_code:
+            worst_code = code
+
+    return worst_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

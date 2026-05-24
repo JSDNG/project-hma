@@ -7,10 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from app.supover_sync import (
-    SUPOVER_API_KEY_HEADER,
-    push_to_supover,
-)
+from app.supover_sync import push_to_supover
+
+API_KEY_HEADER = "x-api-key"
 
 
 def _hma_body() -> dict:
@@ -35,6 +34,7 @@ def test_push_to_supover_forwards_payload_verbatim():
         "secret-key",
         payload,
         timeout=15,
+        api_key_header="x-api-key",
     )
 
     session.post.assert_called_once()
@@ -43,7 +43,7 @@ def test_push_to_supover_forwards_payload_verbatim():
     assert kwargs["timeout"] == 15
     assert kwargs["json"] == payload
     assert kwargs["json"] is payload
-    assert kwargs["headers"][SUPOVER_API_KEY_HEADER] == "secret-key"
+    assert kwargs["headers"][API_KEY_HEADER] == "secret-key"
     assert kwargs["headers"]["Content-Type"] == "application/json"
     assert resp.status_code == 200
 
@@ -51,14 +51,14 @@ def test_push_to_supover_forwards_payload_verbatim():
 def test_push_to_supover_rejects_empty_api_key():
     session = MagicMock()
     with pytest.raises(ValueError, match="SUPOVER_API_KEY"):
-        push_to_supover(session, "https://supover.test/sync", "   ", {}, 10)
+        push_to_supover(session, "https://supover.test/sync", "   ", {}, 10, "x-api-key")
     session.post.assert_not_called()
 
 
 def test_push_to_supover_rejects_empty_url():
     session = MagicMock()
     with pytest.raises(ValueError, match="SUPOVER_SYNC_URL"):
-        push_to_supover(session, "", "key", {}, 10)
+        push_to_supover(session, "", "key", {}, 10, "x-api-key")
     session.post.assert_not_called()
 
 
@@ -67,7 +67,7 @@ def test_push_to_supover_propagates_network_error():
     session.post.side_effect = requests.ConnectionError("unreachable")
     with pytest.raises(requests.ConnectionError):
         push_to_supover(
-            session, "https://supover.test/sync", "key", _hma_body(), 5
+            session, "https://supover.test/sync", "key", _hma_body(), 5, "x-api-key",
         )
 
 
@@ -80,7 +80,8 @@ def test_push_to_supover_strips_whitespace_from_key_and_url():
         "  key  ",
         {},
         10,
+        "x-api-key",
     )
     args, kwargs = session.post.call_args
     assert args == ("https://supover.test/sync",)
-    assert kwargs["headers"][SUPOVER_API_KEY_HEADER] == "key"
+    assert kwargs["headers"][API_KEY_HEADER] == "key"

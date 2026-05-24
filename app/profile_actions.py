@@ -22,13 +22,7 @@ from typing import TYPE_CHECKING, Iterator
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext
 
-SELLER_BILLS_URL = "https://seller-us.tiktok.com/finance/bills"
-HEALTH_CENTER_URL = "https://seller-us.tiktok.com/health-center"
-
-PENDING_BALANCE_XPATH = "//div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[1]/div/div/div[1]/div[1]/div[2]/span"
-ON_HOLD_XPATH = "//div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[1]/div/div/div[1]/div[5]/div[2]/span"
-BANK_ACCOUNT_XPATH = "//div[1]/div[2]/main/div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[2]/div/div/div/div[2]/div/div[2]/div/span[2]"
-ACCOUNT_STATUS_XPATH = "//div[1]/section/nav/div/div/div/div/div/div/div[1]/div[1]/div[2]"
+    from .config import Settings
 
 
 @contextmanager
@@ -50,75 +44,84 @@ def _attach_to_profile(ws_url: str) -> Iterator["BrowserContext"]:
             browser.close()
 
 
-def open_seller_bills(ws_url: str, log: logging.Logger) -> None:
+def open_seller_bills(ws_url: str, log: logging.Logger, settings: "Settings") -> None:
     """Open the TikTok Seller US bills page in a new tab on the HMA profile."""
     with _attach_to_profile(ws_url) as context:
         page = context.new_page()
-        page.goto(SELLER_BILLS_URL, wait_until="domcontentloaded")
+        page.goto(settings.tiktok_seller_bills_url, wait_until="domcontentloaded")
         log.info(
             "Seller bills loaded: title=%r url=%s", page.title(), page.url
         )
 
 
-def check_seller_status(ws_url: str, log: logging.Logger) -> None:
-    """Extract pending balance and account status from a TikTok Seller profile.
+def check_seller_status(
+    ws_url: str, log: logging.Logger, settings: "Settings",
+) -> dict[str, str | None]:
+    """Extract pending balance, on-hold, bank account, and account status.
 
-    1. Navigate to the bills page and read the pending balance.
-    2. Navigate to the health-center page and check for "Account deactivated".
-    3. Log both results, then dwell for 300 seconds.
+    Returns a dict with keys: pending_balance, on_hold, bank_account,
+    account_status. Values are ``None`` when the element was not found.
     """
+    timeout = settings.tiktok_element_timeout
+    delay = settings.tiktok_step_delay
+
     with _attach_to_profile(ws_url) as context:
         page = context.new_page()
 
-        # --- Bills page: pending balance ---
-        page.goto(SELLER_BILLS_URL, wait_until="domcontentloaded")
+        page.goto(settings.tiktok_seller_bills_url, wait_until="domcontentloaded")
         log.info("Seller bills loaded: url=%s", page.url)
 
         pending_balance: str | None = None
         try:
-            locator = page.locator(f"xpath={PENDING_BALANCE_XPATH}")
-            locator.wait_for(state="visible", timeout=15_000)
+            locator = page.locator(f"xpath={settings.xpath_pending_balance}")
+            locator.wait_for(state="visible", timeout=timeout)
             pending_balance = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
-        time.sleep(5)
+        time.sleep(delay)
 
         on_hold: str | None = None
         try:
-            locator = page.locator(f"xpath={ON_HOLD_XPATH}")
-            locator.wait_for(state="visible", timeout=15_000)
+            locator = page.locator(f"xpath={settings.xpath_on_hold}")
+            locator.wait_for(state="visible", timeout=timeout)
             on_hold = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
-        time.sleep(5)
+        time.sleep(delay)
 
         bank_account: str | None = None
         try:
-            locator = page.locator(f"xpath={BANK_ACCOUNT_XPATH}")
-            locator.wait_for(state="visible", timeout=15_000)
+            locator = page.locator(f"xpath={settings.xpath_bank_account}")
+            locator.wait_for(state="visible", timeout=timeout)
             bank_account = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
-        time.sleep(5)
+        time.sleep(delay)
 
-        # --- Health-center page: account status ---
-        page.goto(HEALTH_CENTER_URL, wait_until="domcontentloaded")
+        page.goto(settings.tiktok_health_center_url, wait_until="domcontentloaded")
         log.info("Health center loaded: url=%s", page.url)
 
         account_status: str | None = None
         try:
-            locator = page.locator(f"xpath={ACCOUNT_STATUS_XPATH}")
-            locator.wait_for(state="visible", timeout=15_000)
+            locator = page.locator(f"xpath={settings.xpath_account_status}")
+            locator.wait_for(state="visible", timeout=timeout)
             text = (locator.text_content() or "").strip()
-            if text == "Account deactivated":
+            if text == settings.tiktok_account_deactivated_text:
                 account_status = text
         except Exception:  # noqa: BLE001
             pass
 
-        time.sleep(5)
+        time.sleep(delay)
+
+        result = {
+            "pending_balance": pending_balance,
+            "on_hold": on_hold,
+            "bank_account": bank_account,
+            "account_status": account_status,
+        }
 
         log.info(
             "pending_balance=%s on_hold=%s bank_account=%s account_status=%s",
@@ -128,4 +131,4 @@ def check_seller_status(ws_url: str, log: logging.Logger) -> None:
             account_status,
         )
 
-        time.sleep(300)
+        return result

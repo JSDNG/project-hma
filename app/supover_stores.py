@@ -1,13 +1,7 @@
-"""Pull dead-with-balance stores from the Supover HMA API.
+"""Pull dead-with-balance stores and push store status to the Supover HMA API.
 
 Pure helpers: callers pass in the HTTP session, base URL, API key, and
 timeout. The module performs no environment access of its own.
-
-The Supover endpoint returns a paginated payload whose ``data`` field is a
-list of stores; every store carries a nested ``profile_hma`` object with the
-HideMyAcc profile metadata (id, profile_id, proxy, ...). The
-``open_first_dead_store_youtube`` script uses ``profile_id`` to start the
-profile against the local HMA REST API.
 """
 
 from __future__ import annotations
@@ -17,7 +11,36 @@ from typing import Any
 
 import requests
 
-from .supover_sync import SUPOVER_API_KEY_HEADER
+from .helpers.http import build_api_headers, validate_api_credentials
+
+
+def push_store_status(
+    session: requests.Session,
+    url: str,
+    api_key: str,
+    timeout: int,
+    api_key_header: str,
+    *,
+    store_id: int,
+    profile_id: str,
+    pending_balance: str | None,
+    on_hold: str | None,
+    bank_account: str | None,
+    account_status: str | None,
+) -> requests.Response:
+    """POST extracted seller status to the Supover stores sync endpoint."""
+    key, target = validate_api_credentials(api_key, url, "SUPOVER_STORES_SYNC_URL")
+    headers = build_api_headers(api_key_header, key)
+    payload = {
+        "store_id": store_id,
+        "profile_id": profile_id,
+        "pending_balance": pending_balance,
+        "on_hold": on_hold,
+        "bank_account": bank_account,
+        "account_status": account_status,
+    }
+    logging.info("POST %s store_id=%s profile_id=%s", target, store_id, profile_id)
+    return session.post(target, json=payload, headers=headers, timeout=timeout)
 
 
 def fetch_dead_stores_with_balance(
@@ -25,6 +48,7 @@ def fetch_dead_stores_with_balance(
     url: str,
     api_key: str,
     timeout: int,
+    api_key_header: str,
     page: int = 1,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
@@ -34,18 +58,8 @@ def fetch_dead_stores_with_balance(
     ``ValueError`` for empty key/url or an unexpected response shape;
     ``requests.RequestException`` propagates for transport errors.
     """
-    key = (api_key or "").strip()
-    if not key:
-        raise ValueError("SUPOVER_API_KEY is not configured; refusing to GET")
-
-    target = (url or "").strip()
-    if not target:
-        raise ValueError("SUPOVER_DEAD_STORES_URL is empty; refusing to GET")
-
-    headers = {
-        SUPOVER_API_KEY_HEADER: key,
-        "Accept": "application/json",
-    }
+    key, target = validate_api_credentials(api_key, url, "SUPOVER_DEAD_STORES_URL")
+    headers = build_api_headers(api_key_header, key, include_content_type=False)
     params = {"page": page, "limit": limit}
     logging.info("GET %s params=%s", target, params)
     resp = session.get(target, headers=headers, params=params, timeout=timeout)
@@ -77,10 +91,7 @@ def fetch_dead_stores_with_balance(
 
 
 def first_profile_id(stores: list[dict[str, Any]]) -> str:
-    """Return the first non-empty ``profile_hma.profile_id`` from ``stores``.
-
-    Raises ``LookupError`` if no row has a usable profile id.
-    """
+    """Return the first non-empty ``profile_hma.profile_id`` from ``stores``."""
     for store in stores:
         profile_hma = store.get("profile_hma")
         if not isinstance(profile_hma, dict):
@@ -91,13 +102,45 @@ def first_profile_id(stores: list[dict[str, Any]]) -> str:
     raise LookupError("No store carries a non-empty profile_hma.profile_id")
 
 
-def _unwrap_envelope(body: Any) -> dict[str, Any]:
-    """Return the paginated envelope, tolerating list-of-one wrapping.
+def first_store_and_profile_id(stores: list[dict[str, Any]]) -> tuple[int, str]:
+    """Return ``(store_id, profile_id)`` for the first eligible store."""
+    for store in stores:
+        profile_hma = store.get("profile_hma")
+        if not isinstance(profile_hma, dict):
+            continue
+        pid = profile_hma.get("profile_id")
+        if not (isinstance(pid, str) and pid.strip()):
+            continue
+        sid = store.get("store_id")
+        if sid is None:
+            continue
+        return int(sid), pid.strip()
+    raise LookupError(
+        "No store carries both a store_id and a non-empty profile_hma.profile_id"
+    )
 
-    The endpoint currently returns ``[{...}]`` (per upstream screenshot), but
-    a bare ``{...}`` is also accepted so a future shape tweak does not break
-    callers silently.
-    """
+
+def all_store_and_profile_ids(
+    stores: list[dict[str, Any]],
+) -> list[tuple[int, str]]:
+    """Return all ``(store_id, profile_id)`` pairs from eligible stores."""
+    results: list[tuple[int, str]] = []
+    for store in stores:
+        profile_hma = store.get("profile_hma")
+        if not isinstance(profile_hma, dict):
+            continue
+        pid = profile_hma.get("profile_id")
+        if not (isinstance(pid, str) and pid.strip()):
+            continue
+        sid = store.get("store_id")
+        if sid is None:
+            continue
+        results.append((int(sid), pid.strip()))
+    return results
+
+
+def _unwrap_envelope(body: Any) -> dict[str, Any]:
+    """Return the paginated envelope, tolerating list-of-one wrapping."""
     if isinstance(body, list):
         if len(body) != 1 or not isinstance(body[0], dict):
             raise ValueError(

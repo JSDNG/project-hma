@@ -20,10 +20,10 @@ Interactive docs are auto-generated:
 Every request to this service **must** include the header
 
 ```
-x-api-key: <HMA_PROFILE_SYNC_API_KEY>
+x-api-key: <SUPOVER_API_KEY>
 ```
 
-where the value matches the server's `HMA_PROFILE_SYNC_API_KEY`
+where the value matches the server's `SUPOVER_API_KEY`
 environment variable. Comparison is constant-time
 (`secrets.compare_digest`).
 
@@ -31,7 +31,7 @@ environment variable. Comparison is constant-time
 |----------------------------------------------|--------|----------------------------------------------------------------------|
 | Header missing                               | `401`  | `{ "detail": "Invalid or missing x-api-key" }`                       |
 | Header present but value does not match      | `401`  | `{ "detail": "Invalid or missing x-api-key" }`                       |
-| Server has no `HMA_PROFILE_SYNC_API_KEY` set | `500`  | `{ "detail": "HMA_PROFILE_SYNC_API_KEY is not configured on the server" }` |
+| Server has no `SUPOVER_API_KEY` set | `500`  | `{ "detail": "SUPOVER_API_KEY is not configured on the server" }` |
 
 The gate is enforced at the router level, so it applies to **every**
 endpoint listed below — including `/healthz`.
@@ -58,7 +58,7 @@ Cheap, dependency-free liveness probe. Does not call the local HMA API.
 
 Returns the resolved, non-secret configuration the service is using.
 Useful for debugging "did my env var take effect?". The inbound
-`HMA_PROFILE_SYNC_API_KEY` is never echoed back — clients already know it
+`SUPOVER_API_KEY` is never echoed back — clients already know it
 because they had to send it to reach this endpoint.
 
 **Response — 200 OK**
@@ -248,20 +248,20 @@ Invoke-RestMethod -Method Delete -Uri http://127.0.0.1:8000/profiles `
 
 ## Examples
 
-> The examples below assume `HMA_PROFILE_SYNC_API_KEY` is exported in your
+> The examples below assume `SUPOVER_API_KEY` is exported in your
 > shell. Pipe through `jq` if you want pretty output.
 
 ### List mapped profile rows
 
 ```bash
-curl -s -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+curl -s -H "x-api-key: $SUPOVER_API_KEY" \
   http://127.0.0.1:8000/profiles | jq
 ```
 
 ### Delete a profile
 
 ```bash
-curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+curl -s -X DELETE -H "x-api-key: $SUPOVER_API_KEY" \
   http://127.0.0.1:8000/profiles/abc123 | jq
 ```
 
@@ -269,7 +269,7 @@ curl -s -X DELETE -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
 
 ```bash
 curl -s -X DELETE http://127.0.0.1:8000/profiles \
-  -H "x-api-key: $HMA_PROFILE_SYNC_API_KEY" \
+  -H "x-api-key: $SUPOVER_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"profile_ids": ["abc123", "def456"]}' | jq
 ```

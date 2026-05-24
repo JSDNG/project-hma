@@ -1,81 +1,84 @@
 # check_seller_status
 
-Browser action chạy trên HMA profile để lấy 3 thông tin từ TikTok Seller US.
+Browser action chạy trên HMA profile để lấy 4 thông tin từ TikTok Seller US, sau đó POST về Supover.
 
 ## Flow
 
 ```
-Bills page ──► pending_balance ──5s──► bank_account ──5s──► Health-center page ──► account_status ──5s──► Log 3 giá trị ──► Dwell 300s
+Bills page ──► pending_balance ──delay──► on_hold ──delay──► bank_account ──delay──► Health-center page ──► account_status ──delay──► Log 4 giá trị ──► POST Supover ──► Dwell
 ```
 
 ### Bước 1 — Pending Balance (trang Bills)
 
-- URL: `https://seller-us.tiktok.com/finance/bills`
-- Chờ DOM loaded, sau đó chờ element visible (timeout 15s)
-- XPath:
-  ```
-  //div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[1]/div/div/div[1]/div[1]/div[2]/span
-  ```
-- Kết quả: text content của span → `pending_balance`
-- Nếu không tìm thấy → `None`, log warning
-- **Đợi 5 giây**
+- URL: `TIKTOK_SELLER_BILLS_URL`
+- Chờ DOM loaded, sau đó chờ element visible (timeout `TIKTOK_ELEMENT_TIMEOUT`)
+- XPath: `XPATH_PENDING_BALANCE`
+- Nếu không tìm thấy → `None`
+- **Đợi `TIKTOK_STEP_DELAY` giây**
 
-### Bước 2 — Bank Account (trang Bills)
+### Bước 2 — On Hold (trang Bills)
 
 - Cùng trang Bills, không reload
-- XPath:
-  ```
-  //div[1]/div[2]/main/div/div/div[3]/div/div[2]/div/div[1]/div/div/div/div[2]/div/div/div/div[2]/div/div[2]/div/span[2]
-  ```
-- Kết quả: text content của span → `bank_account`
-- Nếu không tìm thấy → `None`, log warning
-- **Đợi 5 giây**
+- XPath: `XPATH_ON_HOLD`
+- Nếu không tìm thấy → `None`
+- **Đợi `TIKTOK_STEP_DELAY` giây**
 
-### Bước 3 — Account Status (trang Health Center)
+### Bước 3 — Bank Account (trang Bills)
 
-- URL: `https://seller-us.tiktok.com/health-center`
-- Chờ DOM loaded, sau đó chờ element visible (timeout 15s)
-- XPath:
-  ```
-  //div[1]/section/nav/div/div/div/div/div/div/div[1]/div[1]/div[2]
-  ```
-- Chỉ ghi nhận nếu text **đúng** là `"Account deactivated"`
+- Cùng trang Bills, không reload
+- XPath: `XPATH_BANK_ACCOUNT`
+- Nếu không tìm thấy → `None`
+- **Đợi `TIKTOK_STEP_DELAY` giây**
+
+### Bước 4 — Account Status (trang Health Center)
+
+- URL: `TIKTOK_HEALTH_CENTER_URL`
+- XPath: `XPATH_ACCOUNT_STATUS`
+- Chỉ ghi nhận nếu text đúng là `TIKTOK_ACCOUNT_DEACTIVATED_TEXT`
 - Nếu text khác hoặc element không tồn tại → `None`
-- **Đợi 5 giây**
+- **Đợi `TIKTOK_STEP_DELAY` giây**
 
-### Bước 4 — Log kết quả
+### Bước 5 — Log & POST Supover
 
-```
-pending_balance=$VALUE bank_account=$VALUE account_status=$VALUE
-```
+- Log 4 giá trị: `pending_balance`, `on_hold`, `bank_account`, `account_status`
+- POST tới `SUPOVER_STORES_SYNC_URL` với `store_id`, `profile_id`, và 4 field trên
 
-### Bước 5 — Dwell 300 giây
+### Bước 6 — Dwell
 
-Giữ browser mở 5 phút trước khi disconnect CDP.
+- Giữ browser mở `TIKTOK_DWELL_SECONDS` giây trước khi stop profile
 
 ## File liên quan
 
 | File | Vai trò |
 |---|---|
-| `app/profile_actions.py` | Hàm `check_seller_status` và các XPath constant |
-| `scripts/open_first_dead_store_tiktok.py` | Script gọi hàm này (start profile → action → stop profile) |
+| `app/profile_actions.py` | Hàm `check_seller_status` |
+| `app/supover_stores.py` | Hàm `push_store_status` POST về Supover |
+| `scripts/check_tiktok_store_status.py` | Script orchestration (loop qua stores) |
+| `.env` | Tất cả URL, XPath, timeout, delay |
 
 ## Chạy
 
 ```bash
-python -m scripts.open_first_dead_store_tiktok
+python -m scripts.check_tiktok_store_status
 ```
 
-Log file: `logs/open_first_dead_store_tiktok.log`
+Log file: `logs/check_tiktok_store_status.log`
 
-## Sửa đổi XPath
+## Cấu hình
 
-Tất cả XPath nằm ở đầu file `app/profile_actions.py` dưới dạng constant:
+Tất cả thông số nằm trong `.env`, không hardcode trong code:
 
-```python
-PENDING_BALANCE_XPATH = "//div/div/div[3]/..."
-BANK_ACCOUNT_XPATH   = "//div[1]/div[2]/main/..."
-ACCOUNT_STATUS_XPATH  = "//div[1]/section/nav/..."
+```env
+TIKTOK_SELLER_BILLS_URL=https://seller-us.tiktok.com/finance/bills
+TIKTOK_HEALTH_CENTER_URL=https://seller-us.tiktok.com/health-center
+TIKTOK_ACCOUNT_DEACTIVATED_TEXT=Account deactivated
+TIKTOK_ELEMENT_TIMEOUT=15000
+TIKTOK_STEP_DELAY=5
+TIKTOK_DWELL_SECONDS=100
+XPATH_PENDING_BALANCE=...
+XPATH_ON_HOLD=...
+XPATH_BANK_ACCOUNT=...
+XPATH_ACCOUNT_STATUS=...
 ```
 
-Khi TikTok thay đổi layout, chỉ cần cập nhật các constant này.
+Khi TikTok thay đổi layout, chỉ cần sửa XPath trong `.env`.

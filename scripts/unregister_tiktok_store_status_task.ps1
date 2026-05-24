@@ -1,14 +1,14 @@
 <#
     .SYNOPSIS
-    Remove the HMA-Check-Seller-Status scheduled task.
+    Remove the HMA-TikTok-Store-Status scheduled task.
 
     .EXAMPLE
-    PS> .\scripts\unregister_check_seller_task.ps1
+    PS> .\scripts\unregister_tiktok_store_status_task.ps1
 #>
 
 [CmdletBinding()]
 param(
-    [string] $TaskName = 'HMA-Check-Seller-Status'
+    [string] $TaskName = 'HMA-TikTok-Store-Status'
 )
 
 $ErrorActionPreference = 'Stop'

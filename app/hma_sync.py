@@ -10,31 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import requests
 
-DEFAULT_HMA_BASE = "http://127.0.0.1:2268"
-DEFAULT_PROFILES_PATH = "/profiles"
-DEFAULT_TIMEOUT = 30
-
-MIN_TCP_PORT = 1
-MAX_TCP_PORT = 65535
-
-HMA_START_SUCCESS_CODE = 1
-
-
-def _coerce_port(port_val: Any, profile_id: str) -> str:
-    """Return a valid TCP port as a string, or '' for missing/invalid input.
-
-    Why: Supover's `profile_hma.port` is an INT column in MySQL strict mode,
-    so a single out-of-range value (e.g. a corrupted upstream record with a
-    timestamp or IP digits in `proxy.port`) aborts the entire batch insert
-    with SQLSTATE 22003. Filter here so one bad profile can't sink the sync.
-    """
+def _coerce_port(port_val: Any, profile_id: str, min_port: int, max_port: int) -> str:
+    """Return a valid TCP port as a string, or '' for missing/invalid input."""
     if port_val in (None, "", 0):
         return ""
     try:
@@ -46,33 +28,17 @@ def _coerce_port(port_val: Any, profile_id: str) -> str:
             port_val,
         )
         return ""
-    if not (MIN_TCP_PORT <= port <= MAX_TCP_PORT):
+    if not (min_port <= port <= max_port):
         logging.warning(
             "Profile %s: proxy.port %d outside %d-%d; sending empty port",
             profile_id,
             port,
-            MIN_TCP_PORT,
-            MAX_TCP_PORT,
+            min_port,
+            max_port,
         )
         return ""
     return str(port)
 
-
-def setup_logging(log_file: Path | None = None, level: str | int = "INFO") -> None:
-    """Configure root logging for the API service."""
-    if isinstance(level, str):
-        level = logging.getLevelName(level.upper())
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if log_file:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_file, encoding="utf-8", mode="a"))
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=handlers,
-        force=True,
-    )
 
 
 def _proxy_dict(profile: dict[str, Any]) -> dict[str, Any]:
@@ -80,7 +46,9 @@ def _proxy_dict(profile: dict[str, Any]) -> dict[str, Any]:
     return p if isinstance(p, dict) else {}
 
 
-def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
+def profile_to_sync_row(
+    profile: dict[str, Any], min_port: int, max_port: int,
+) -> dict[str, str]:
     """Map a HideMyAcc GET /profiles item to a flat row of string fields.
 
     Uses proxy.host, proxy.port, proxy.username, proxy.password when present;
@@ -88,7 +56,7 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
     """
     proxy = _proxy_dict(profile)
     profile_id = str(profile.get("id", ""))
-    port_str = _coerce_port(proxy.get("port"), profile_id)
+    port_str = _coerce_port(proxy.get("port"), profile_id, min_port, max_port)
 
     host = (proxy.get("host") or proxy.get("autoProxyServer") or "").strip()
     username = proxy.get("username") or proxy.get("autoProxyUsername") or ""
@@ -105,9 +73,9 @@ def profile_to_sync_row(profile: dict[str, Any]) -> dict[str, str]:
 
 
 def fetch_profiles(
-    session: requests.Session, base_url: str, timeout: int
+    session: requests.Session, base_url: str, timeout: int, profiles_path: str,
 ) -> list[dict[str, Any]]:
-    url = base_url.rstrip("/") + DEFAULT_PROFILES_PATH
+    url = base_url.rstrip("/") + profiles_path
     logging.info("GET %s", url)
     r = session.get(url, timeout=timeout)
     r.raise_for_status()
@@ -134,7 +102,7 @@ def fetch_profiles(
 
 
 def fetch_profiles_response(
-    session: requests.Session, base_url: str, timeout: int
+    session: requests.Session, base_url: str, timeout: int, profiles_path: str,
 ) -> Any:
     """Return the full HMA ``GET /profiles`` JSON body, untouched.
 
@@ -142,7 +110,7 @@ def fetch_profiles_response(
     verbatim. No shape validation, no data extraction — the caller is
     responsible for handling whatever HMA sent back.
     """
-    url = base_url.rstrip("/") + DEFAULT_PROFILES_PATH
+    url = base_url.rstrip("/") + profiles_path
     logging.info("GET %s", url)
     r = session.get(url, timeout=timeout)
     r.raise_for_status()
@@ -154,21 +122,22 @@ def delete_profile(
     base_url: str,
     profile_id: str,
     timeout: int,
+    profiles_path: str,
 ) -> requests.Response:
     """DELETE /profiles/{profile_id} against the local HideMyAcc API."""
     pid = profile_id.strip()
     if not pid:
         raise ValueError("profile_id must be a non-empty string")
-    url = base_url.rstrip("/") + DEFAULT_PROFILES_PATH + "/" + pid
+    url = base_url.rstrip("/") + profiles_path + "/" + pid
     logging.info("DELETE %s", url)
     return session.delete(url, timeout=timeout)
 
 
-def _profile_action_url(base_url: str, action: str, profile_id: str) -> str:
+def _profile_action_url(base_url: str, action: str, profile_id: str, profiles_path: str) -> str:
     pid = profile_id.strip()
     if not pid:
         raise ValueError("profile_id must be a non-empty string")
-    return f"{base_url.rstrip('/')}{DEFAULT_PROFILES_PATH}/{action}/{pid}"
+    return f"{base_url.rstrip('/')}{profiles_path}/{action}/{pid}"
 
 
 def start_profile(
@@ -176,9 +145,10 @@ def start_profile(
     base_url: str,
     profile_id: str,
     timeout: int,
+    profiles_path: str,
 ) -> requests.Response:
     """POST /profiles/start/{profile_id} against the local HideMyAcc API."""
-    url = _profile_action_url(base_url, "start", profile_id)
+    url = _profile_action_url(base_url, "start", profile_id, profiles_path)
     logging.info("POST %s", url)
     return session.post(url, timeout=timeout)
 
@@ -188,9 +158,10 @@ def stop_profile(
     base_url: str,
     profile_id: str,
     timeout: int,
+    profiles_path: str,
 ) -> requests.Response:
     """POST /profiles/stop/{profile_id} against the local HideMyAcc API."""
-    url = _profile_action_url(base_url, "stop", profile_id)
+    url = _profile_action_url(base_url, "stop", profile_id, profiles_path)
     logging.info("POST %s", url)
     return session.post(url, timeout=timeout)
 
@@ -207,7 +178,7 @@ class StartResult:
     error: str | None
 
 
-def interpret_start_response(resp: requests.Response) -> StartResult:
+def interpret_start_response(resp: requests.Response, start_success_code: int) -> StartResult:
     """Validate an HMA /profiles/start response and extract the wsUrl.
 
     Success requires HTTP 2xx, body.code == 1, body.data.success is True,
@@ -238,14 +209,14 @@ def interpret_start_response(resp: requests.Response) -> StartResult:
         )
 
     code = body.get("code")
-    if code != HMA_START_SUCCESS_CODE:
+    if code != start_success_code:
         return StartResult(
             ok=False,
             ws_url=None,
             port=None,
             user_agent=None,
             major_version=None,
-            error=f"HMA body code={code!r}, expected {HMA_START_SUCCESS_CODE}",
+            error=f"HMA body code={code!r}, expected {start_success_code}",
         )
 
     data = body.get("data")

@@ -10,7 +10,7 @@
 3. **Simple to run.** A single `uvicorn` command should start the service. No
    Docker required. Runs identically on macOS, Linux, and Windows.
 4. **Explicit configuration.** All tunables come from environment variables
-   (or a local `.env`), with safe defaults. Secrets are never echoed back.
+   (or a local `.env`), with no hardcoded defaults in code. Secrets are never echoed back.
 5. **Production-ready basics.** Typed Pydantic models, structured logging,
    proper HTTP status codes for upstream failures, `x-api-key` gate on every
    route, OpenAPI documentation.
@@ -19,11 +19,8 @@
 
 - Persistence, rate limiting, multi-tenant config — explicitly out of
   scope for this iteration.
-- In-process background jobs. The Supover sync runs as an external,
-  OS-scheduled script (`scripts/sync_to_supover.py`), not as an in-app
-  scheduler thread. This keeps the FastAPI service stateless and
-  request-driven; see [Scheduled Supover sync](#scheduled-supover-sync)
-  below.
+- In-process background jobs. Scripts run as external, OS-scheduled jobs,
+  not as in-app scheduler threads.
 
 ---
 
@@ -36,31 +33,41 @@ project-hma/
 │   ├── main.py                       # FastAPI() instance, router wiring, OpenAPI metadata
 │   ├── config.py                     # Settings (pydantic-settings) + cached get_settings()
 │   ├── schemas.py                    # Pydantic request/response models
-│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles (GET),
-│                                     # /profiles (DELETE batch), /profiles/{id} (DELETE)
+│   ├── routes.py                     # APIRouter with /healthz, /config, /profiles endpoints
 │   ├── auth.py                       # require_api_key dependency (x-api-key gate)
-│   ├── hma_sync.py                   # Pure service module: fetch_profiles, fetch_profiles_response,
-│   │                                 # profile_to_sync_row, delete_profile, parse_hma_body, setup_logging
-│   └── supover_sync.py               # Pure helper: push_to_supover
-│                                     # (used by the scheduled runner; not by the API)
+│   ├── hma_sync.py                   # Pure service module: fetch_profiles, delete_profile,
+│   │                                 # start_profile, stop_profile, interpret_start_response
+│   ├── profile_actions.py            # Playwright browser actions (check_seller_status)
+│   ├── supover_sync.py               # Pure helper: push_to_supover
+│   ├── supover_stores.py             # Pure helpers: fetch/push store data, extract IDs
+│   └── helpers/                      # Shared utilities
+│       ├── __init__.py
+│       ├── http.py                   # validate_api_credentials(), build_api_headers()
+│       └── logging.py                # setup_logging()
 │
 ├── scripts/                          # OS-scheduled jobs (run outside the FastAPI process)
-│   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover, twice daily
-│   ├── run_sync.bat                  # Windows Task Scheduler launcher (sets cwd, activates venv)
+│   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover profiles sync
+│   ├── check_tiktok_store_status.py  # CLI entry point: check TikTok store status, push to Supover
+│   ├── run_sync.bat                  # Windows launcher for sync_to_supover
 │   ├── setup_sync_task.ps1           # Register the HMA-Supover-Sync scheduled task
-│   └── unregister_sync_task.ps1      # Remove the HMA-Supover-Sync scheduled task
+│   ├── unregister_sync_task.ps1      # Remove the HMA-Supover-Sync scheduled task
+│   ├── run_tiktok_store_status.bat   # Windows launcher for check_tiktok_store_status
+│   ├── setup_tiktok_store_status_task.ps1    # Register the HMA-TikTok-Store-Status task (every 2 days)
+│   └── unregister_tiktok_store_status_task.ps1
 │
 ├── tests/                            # pytest suite
 │   ├── conftest.py                   # Shared fixtures: TestClient, settings override
 │   ├── test_hma_sync.py              # Unit tests for the pure helpers
 │   ├── test_routes.py                # Endpoint tests with upstream HTTP mocked
+│   ├── test_supover_stores.py        # Unit tests for store fetch/ID extraction
 │   └── test_supover_sync.py          # Unit tests for push_to_supover
 │
 ├── docs/
 │   ├── ARCHITECTURE.md               # This file
-│   └── API.md                        # Endpoint reference
+│   ├── API.md                        # Endpoint reference
+│   └── CHECK_SELLER_STATUS.md        # TikTok store status check flow
 │
-├── logs/                             # Free-form log destination (optional)
+├── logs/                             # Log destination (gitignored)
 │
 ├── pyproject.toml                    # pytest config (pythonpath, testpaths)
 ├── requirements.txt
@@ -72,215 +79,131 @@ project-hma/
 ### Why this shape
 
 - **`app/` as a single package** keeps imports flat (`from app.hma_sync import …`)
-  and matches FastAPI's "Bigger Applications" convention without
-  over-fragmenting a small service.
-- **No `app/api/` subdirectory.** With four endpoints, splitting into multiple
-  router files adds friction without benefit. If the surface grows past
-  ~10 endpoints we'll split per resource.
-- **No `app/services/` subdirectory.** There is exactly one service module
-  (`hma_sync.py`). Adding a folder for one file is premature abstraction.
+  and matches FastAPI's "Bigger Applications" convention.
+- **`app/helpers/`** holds shared utilities (HTTP header construction,
+  credential validation, logging setup) used across multiple modules.
+- **No `app/services/` subdirectory.** The service is small enough that
+  flat modules are clearer than nested packages.
 
 ---
 
 ## Module responsibilities
 
+### `app/helpers/http.py`  (shared HTTP utilities)
+
+- `validate_api_credentials(api_key, url, url_env_name) -> (key, target)` — strips and validates, raises `ValueError` if empty
+- `build_api_headers(api_key_header, key, include_content_type=True) -> dict` — builds standard API headers
+
+Used by: `supover_sync.py`, `supover_stores.py`.
+
+### `app/helpers/logging.py`  (shared logging)
+
+- `setup_logging(log_file=None, level="INFO")` — configures root logger (stdout + optional file)
+
+Used by: `main.py`, both scripts.
+
 ### `app/hma_sync.py`  (pure logic — no FastAPI imports)
 
-Pure functions, no global state, no I/O side effects beyond explicit HTTP
-calls made through a `requests.Session` passed in by the caller. This is
-where bug fixes and behavior changes belong.
+Pure functions, no global state. Public surface:
 
-Public surface:
+- `fetch_profiles(session, base_url, timeout, profiles_path) -> list[dict]`
+- `fetch_profiles_response(session, base_url, timeout, profiles_path) -> Any`
+- `profile_to_sync_row(profile, min_port, max_port) -> dict[str, str]`
+- `delete_profile(session, base_url, profile_id, timeout, profiles_path) -> Response`
+- `start_profile(session, base_url, profile_id, timeout, profiles_path) -> Response`
+- `stop_profile(session, base_url, profile_id, timeout, profiles_path) -> Response`
+- `interpret_start_response(resp, start_success_code) -> StartResult`
+- `parse_hma_body(resp) -> dict | None`
 
-- `fetch_profiles(session, base_url, timeout) -> list[dict]` — validated `data` list, used by the FastAPI route
-- `fetch_profiles_response(session, base_url, timeout) -> Any` — raw HMA JSON body, used by the scheduled sync
-- `profile_to_sync_row(profile: dict) -> dict[str, str]`
-- `delete_profile(session, base_url, profile_id, timeout) -> requests.Response`
-- `parse_hma_body(resp) -> dict | None` — JSON-parses an HMA response into
-  a dict if possible (callers interpret the `code` field themselves; see
-  "HMA response convention" below)
-- `setup_logging(log_file=None, level="INFO") -> None`
+All parameters (paths, timeouts, success codes) come from callers — no hardcoded defaults.
 
-Module constants: `DEFAULT_HMA_BASE`, `DEFAULT_PROFILES_PATH`,
-`DEFAULT_TIMEOUT`.
+### `app/profile_actions.py`  (browser automation)
+
+- `check_seller_status(ws_url, log, settings) -> dict[str, str | None]` — navigates TikTok Seller pages, extracts 4 fields (pending_balance, on_hold, bank_account, account_status)
+
+Uses Playwright over CDP. All URLs, XPaths, timeouts, and delays come from `settings` (`.env`).
+
+### `app/supover_stores.py`  (Supover stores API)
+
+- `push_store_status(...)` — POST store status to Supover
+- `fetch_dead_stores_with_balance(...)` — GET dead stores with balance
+- `all_store_and_profile_ids(stores)` — extract all eligible (store_id, profile_id) pairs
+- `first_store_and_profile_id(stores)` / `first_profile_id(stores)` — extract first eligible
 
 ### `app/config.py`
 
-```python
-class Settings(BaseSettings):
-    hma_local_api_base: str = "http://127.0.0.1:2268"
-    hma_profile_sync_api_key: str = ""    # required: inbound x-api-key
-    hma_http_timeout: int = 30
-    hma_log_level: str = "INFO"
-
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="")
-```
-
-Exposed via a `@lru_cache`-wrapped `get_settings()` so each request gets the
-same instance and tests can override the dependency cleanly.
-
-### `app/schemas.py`
-
-Pydantic models that mirror what the service returns. Notable types:
-
-- `ProfileRow` — one mapped row (`profile_id`, `profile_name`, `proxy`, `port`,
-  `username`, `password`). The proxy `password` is returned
-  in clear text; access control is provided by the `x-api-key` gate.
-- `ConfigView` — non-secret settings snapshot
-  (`hma_local_api_base`, `hma_http_timeout`, `hma_log_level`). The inbound
-  API key is never echoed back.
-- `DeleteResponse` / `BatchDeleteRequest` / `BatchDeleteResponse` /
-  `BatchDeleteFailure` — DELETE endpoint shapes.
-- `HealthResponse` — `{ status: "ok" }`.
+All configuration comes from `.env` via `pydantic-settings`. No hardcoded defaults for URLs, API keys, or XPaths.
+Exposed via `@lru_cache`-wrapped `get_settings()`.
 
 ### `app/routes.py`
 
 A single `APIRouter()` with tags grouped by purpose (`system`, `profiles`).
-Endpoints are **synchronous** (`def`, not `async def`) because the service
-uses the blocking `requests` library; FastAPI runs sync handlers in a
-threadpool automatically. Going async would force a parallel `httpx` codebase
-or `run_in_threadpool` wrapping for zero benefit at this scale.
-
-Endpoints map to `hma_sync.*` plus light error translation:
-
-| Endpoint                     | Calls                                                       |
-|------------------------------|-------------------------------------------------------------|
-| `GET    /healthz`            | —                                                           |
-| `GET    /config`             | `get_settings()` → non-secret view                          |
-| `GET    /profiles`           | `fetch_profiles` → list[`profile_to_sync_row`]              |
-| `DELETE /profiles/{id}`      | `delete_profile` (one upstream call)                        |
-| `DELETE /profiles`           | `delete_profile` per ID (best-effort, deduplicated)         |
-
-### `app/main.py`
-
-Builds the `FastAPI` instance, registers `openapi_tags`, configures logging
-once on startup via the lifespan context manager, and includes the router.
-Kept under ~30 lines.
+Endpoints are synchronous and map to `hma_sync.*` functions.
 
 ---
 
 ## Error handling
-
-The service translates upstream failures into appropriate HTTP status codes
-instead of leaking 500s:
 
 | Condition                                          | Status | Body                                              |
 |----------------------------------------------------|--------|---------------------------------------------------|
 | Local HMA unreachable / `requests.RequestException`| `502`  | `{ "detail": "HMA local API error: ..." }`        |
 | Local HMA returns malformed JSON / missing `data`  | `502`  | `{ "detail": "Invalid HMA response: ..." }`       |
 | `DELETE /profiles/{id}` — HMA 402 + `code: 0`      | `402`  | `{ "detail": "HMA local API requires a Team plan ..." }` |
-| `DELETE /profiles/{id}` — HMA `code != 1` (other)  | `502`  | `{ "detail": "HMA local API signaled failure (HTTP N, code=K): ..." }` |
+| `DELETE /profiles/{id}` — HMA `code != 1` (other)  | `502`  | `{ "detail": "HMA local API signaled failure ..." }` |
 | `DELETE /profiles` — per-ID errors                 | `200`  | Returned inside `failures[]`, not as an HTTP error |
 | Missing / wrong `x-api-key` header                 | `401`  | `{ "detail": "Invalid or missing x-api-key" }`    |
-| Server `HMA_PROFILE_SYNC_API_KEY` not configured   | `500`  | `{ "detail": "HMA_PROFILE_SYNC_API_KEY is not configured on the server" }` |
-| Unexpected exception                               | `500`  | FastAPI default                                   |
-
----
-
-## HMA response convention
-
-The HideMyAcc local API carries the meaningful status in the response
-**body**'s `code` field, and the meaning of that field is endpoint-specific.
-For `DELETE /profiles/{id}` ([official
-docs](https://eng-hidemyacc.gitbook.io/hidemyacc-docs-vietnamese/hidemyacc-3.0-tinh-nang/hidemyacc-3.0-api/profile/xoa-profile)):
-
-| HMA HTTP | HMA body         | Meaning                                            |
-|----------|------------------|----------------------------------------------------|
-| `200`    | `{"code": 1}`    | Success — profile deleted.                         |
-| `402`    | `{"code": 0}`    | "API supported from Team plan" — subscription required. |
-
-`parse_hma_body(resp)` returns the JSON body as a dict (or `None` if the
-body wasn't JSON). The DELETE route's `_interpret_hma_delete` helper applies
-the rules above:
-
-1. `code == 1` → success.
-2. HTTP `402` + `code == 0` → pass `402` through with a clear message.
-3. Anything else → `502` with `(HTTP N, code=K, body...)` in `detail`.
-
-This is applied **only** to the DELETE endpoints. `GET /profiles` already
-relies on the presence of `data: [...]` rather than a code value.
+| Server `SUPOVER_API_KEY` not configured             | `500`  | `{ "detail": "SUPOVER_API_KEY is not configured on the server" }` |
 
 ---
 
 ## Security
 
 - **Inbound authentication.** Every request must carry an `x-api-key` header
-  matching `HMA_PROFILE_SYNC_API_KEY`. The check lives in `app/auth.py` as
-  the `require_api_key` dependency and is attached at the `APIRouter` level
-  so it applies uniformly to every endpoint, including `/healthz`. Header
-  comparison uses `secrets.compare_digest` to avoid timing leaks. The gate
-  is **fail-closed**: if the server has no key configured, all requests are
-  rejected with `500` rather than silently letting traffic through.
-- **Proxy passwords are returned in clear text** on `GET /profiles`. The
-  endpoint is gated by `x-api-key`, so access control is the responsibility
-  of whoever holds the key — treat `HMA_PROFILE_SYNC_API_KEY` as sensitive.
-  The inbound API key itself is never echoed back from `/config`.
+  matching `SUPOVER_API_KEY`. The check lives in `app/auth.py` as
+  the `require_api_key` dependency. Comparison uses `secrets.compare_digest`.
+  Fail-closed: if the server has no key configured, all requests are rejected with `500`.
+- **Proxy passwords are returned in clear text** on `GET /profiles`. Access
+  control is provided by the `x-api-key` gate.
 - No hardcoded API key defaults anywhere in source.
-  `HMA_PROFILE_SYNC_API_KEY` comes only from the environment (or `.env`).
-
----
-
-## Testing strategy
-
-- **Pure-logic unit tests** (`test_hma_sync.py`): exercise `profile_to_sync_row`
-  with multiple profile shapes (proxy dict present, fallback to `autoProxy*`,
-  missing fields, non-string port) and the argument validation of
-  `delete_profile`.
-- **Route tests** (`test_routes.py`): use FastAPI `TestClient` with a `with`
-  block (so lifespan runs). Upstream HTTP is patched at the
-  `requests.Session.get/delete` boundary using `unittest.mock`. Override
-  `get_settings` via `app.dependency_overrides` to inject test config. A
-  separate `unauth_client` fixture (no default `x-api-key` header) covers
-  the auth gate.
-- No live HTTP. CI-safe.
-
-Run with `pytest -q` from the project root (any OS).
+  `SUPOVER_API_KEY` comes only from the environment (or `.env`).
 
 ---
 
 ## Logging
 
 `app/main.py` configures the root logger on startup via the lifespan context
-manager, using `setup_logging` from `app/hma_sync.py`. Uvicorn's own loggers
-are left alone. By default logs go to stdout; pass a `log_file=Path(...)` to
-`setup_logging` to also tee them to disk.
+manager, using `setup_logging` from `app/helpers/logging.py`. Uvicorn's own
+loggers are left alone. By default logs go to stdout; pass a `log_file` to
+also tee them to disk.
 
 ---
 
-## Scheduled Supover sync
+## Scheduled jobs
 
-`scripts/sync_to_supover.py` is a standalone job that runs **outside** the
-FastAPI process. It forwards the HMA response verbatim:
+### Supover profiles sync (`scripts/sync_to_supover.py`)
 
-1. `app.config.get_settings()` — same `.env`, same env vars.
-2. `app.hma_sync.fetch_profiles_response` against `HMA_LOCAL_API_BASE`
-   directly (the script does **not** call the FastAPI `/profiles` endpoint,
-   so the service does not need to be running). Returns the raw HMA JSON body.
-3. `app.supover_sync.push_to_supover` — POST that body **unchanged** to
-   `SUPOVER_SYNC_URL` with `x-api-key: SUPOVER_API_KEY`. No mapping, no
-   envelope construction.
+Forwards the raw HMA `/profiles` response to Supover verbatim. Runs twice
+daily via Windows Task Scheduler (`scripts/setup_sync_task.ps1`).
 
-The runner exits with a meaningful code so Task Scheduler's "Last Run
-Result" column is useful (`0` ok, `1` config, `2` HMA, `3` Supover) and
-appends to `logs/supover_sync.log`. Scheduling itself is delegated to the
-OS — on Windows that is Task Scheduler, registered via
-`scripts/setup_sync_task.ps1` with two daily triggers at `00:00` and `12:00`.
+### TikTok store status check (`scripts/check_tiktok_store_status.py`)
 
-The FastAPI app does not import `supover_sync` and does not start any
-background thread — keeping the runtime stateless and request-driven.
+For each dead-with-balance store from Supover:
+1. Start HMA profile → get `wsUrl`
+2. Navigate TikTok Seller pages → extract 4 fields
+3. POST data back to Supover `/api/hma/stores/sync`
+4. Dwell → stop profile
+
+Runs every 2 days via Windows Task Scheduler (`scripts/setup_tiktok_store_status_task.ps1`).
 
 ---
 
-## Cross-platform notes
+## Testing strategy
 
-The application code is pure Python and uses no OS-specific APIs.
-Platform differences exist only in operator-facing commands:
+- **Pure-logic unit tests** (`test_hma_sync.py`): exercise `profile_to_sync_row`,
+  `delete_profile`, `start_profile`, `stop_profile`, `interpret_start_response`.
+- **Route tests** (`test_routes.py`): FastAPI `TestClient` with mocked upstream HTTP.
+- **Supover tests** (`test_supover_sync.py`, `test_supover_stores.py`): validation,
+  header construction, error propagation.
+- No live HTTP. CI-safe.
 
-- **venv activation:** `source .venv/bin/activate` (POSIX) vs.
-  `.\.venv\Scripts\Activate.ps1` (Windows PowerShell) /
-  `.venv\Scripts\activate.bat` (Windows cmd).
-- **Setting env vars:** `export X=...` vs. `$env:X = "..."` vs. `set X=...`.
-- **Running on startup:** launchd / systemd / NSSM, respectively.
-
-The actual `uvicorn app.main:app` invocation is identical on every OS. See
-the README for copy-pasteable commands per platform.
+Run with `pytest -q` from the project root (any OS).

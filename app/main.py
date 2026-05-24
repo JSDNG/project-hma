@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import get_settings
-from .hma_sync import setup_logging
+from .helpers.logging import setup_logging
 from .routes import router
 
 tags_metadata = [
