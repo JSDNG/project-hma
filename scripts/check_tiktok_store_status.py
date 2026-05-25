@@ -88,12 +88,6 @@ def _process_store(
         return EXIT_HMA
 
     assert result.ws_url is not None
-    log.info(
-        "HMA profile started: port=%s majorVersion=%s wsUrl=%s",
-        result.port,
-        result.major_version,
-        result.ws_url,
-    )
 
     exit_code = EXIT_OK
     try:
@@ -124,7 +118,6 @@ def _process_store(
                 )
             except (requests.RequestException, ValueError) as exc:
                 log.error("Supover stores/sync failed: %s", exc)
-            log.info("Dwell %ds before stopping profile.", settings.tiktok_dwell_seconds)
             try:
                 time.sleep(settings.tiktok_dwell_seconds)
             except KeyboardInterrupt:
@@ -144,8 +137,6 @@ def _process_store(
                     stop_resp.status_code,
                     (stop_resp.text or "")[:300],
                 )
-            else:
-                log.info("HMA profile stopped (HTTP %s).", stop_resp.status_code)
         except requests.RequestException as exc:
             log.warning("HMA /profiles/stop unreachable: %s", exc)
 
@@ -174,7 +165,7 @@ def main() -> int:
             settings.hma_http_timeout,
             settings.supover_api_key_header,
             page=1,
-            limit=1,
+            limit=2,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)

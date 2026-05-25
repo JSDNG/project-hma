@@ -41,7 +41,6 @@ def push_store_status(
         "bank_account_number": bank_account_number,
         "shop_status": shop_status,
     }
-    logging.info("POST %s store_id=%s tt_shop_code=%s profile_id=%s", target, store_id, tt_shop_code, profile_id)
     return session.post(target, json=payload, headers=headers, timeout=timeout)
 
 

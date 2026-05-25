@@ -63,7 +63,6 @@ def check_seller_status(
         page = context.new_page()
 
         page.goto(seller_bills_url, wait_until="domcontentloaded")
-        log.info("Seller bills loaded: url=%s", page.url)
 
         pending_settlement: str | None = None
         try:
@@ -97,7 +96,6 @@ def check_seller_status(
 
         shop_status: str | None = None
         try:
-            log.info("Fetching shop info: url=%s", shop_info_api_url)
             resp = page.evaluate(
                 """async (url) => {
                     const r = await fetch(url);
@@ -105,11 +103,9 @@ def check_seller_status(
                 }""",
                 shop_info_api_url,
             )
-            log.info("Shop info API response: %s", resp)
             value = (resp.get("data") or {}).get("seller", {}).get("shop_status")
             if value is not None:
                 shop_status = str(value)
-            log.info("Shop info API extracted: shop_status=%s", shop_status)
         except Exception:  # noqa: BLE001
             log.warning("Shop info API call failed: url=%s", shop_info_api_url)
 
