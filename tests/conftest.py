@@ -31,15 +31,13 @@ def settings() -> Settings:
         supover_dead_stores_url="https://supover.test/api/hma/stores/dead-with-balance",
         supover_stores_sync_url="https://supover.test/api/hma/stores/sync",
         tiktok_seller_bills_url="https://seller-us.tiktok.com/finance/bills",
-        tiktok_health_center_url="https://seller-us.tiktok.com/health-center",
-        tiktok_account_deactivated_text="Account deactivated",
+        tiktok_shop_info_api_url="https://seller-{region}.tiktok.com/api/v1/seller/common/get",
         tiktok_element_timeout=15000,
         tiktok_step_delay=5,
         tiktok_dwell_seconds=300,
         xpath_pending_balance="//test/xpath",
         xpath_on_hold="//test/xpath",
         xpath_bank_account="//test/xpath",
-        xpath_account_status="//test/xpath",
     )
 
 

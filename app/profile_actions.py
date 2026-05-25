@@ -57,7 +57,7 @@ def check_seller_status(
     delay = settings.tiktok_step_delay
 
     seller_bills_url = settings.tiktok_seller_bills_url.format(region=region)
-    health_center_url = settings.tiktok_health_center_url.format(region=region)
+    shop_info_api_url = settings.tiktok_shop_info_api_url.format(region=region)
 
     with _attach_to_profile(ws_url) as context:
         page = context.new_page()
@@ -95,19 +95,23 @@ def check_seller_status(
 
         time.sleep(delay)
 
-        page.goto(health_center_url, wait_until="domcontentloaded")
-        log.info("Health center loaded: url=%s", page.url)
-        time.sleep(delay)
-
         shop_status: str | None = None
         try:
-            locator = page.locator(f"xpath={settings.xpath_account_status}")
-            locator.wait_for(state="visible", timeout=timeout)
-            text = (locator.text_content() or "").strip()
-            if text == settings.tiktok_account_deactivated_text:
-                shop_status = text
+            log.info("Fetching shop info: url=%s", shop_info_api_url)
+            resp = page.evaluate(
+                """async (url) => {
+                    const r = await fetch(url);
+                    return await r.json();
+                }""",
+                shop_info_api_url,
+            )
+            log.info("Shop info API response: %s", resp)
+            value = (resp.get("data") or {}).get("seller", {}).get("shop_status")
+            if value is not None:
+                shop_status = str(value)
+            log.info("Shop info API extracted: shop_status=%s", shop_status)
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("Shop info API call failed: url=%s", shop_info_api_url)
 
         time.sleep(delay)
 
