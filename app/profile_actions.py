@@ -64,21 +64,25 @@ def check_seller_status(
 
         page.goto(seller_bills_url, wait_until="domcontentloaded")
 
-        pending_settlement: str | None = None
+        pending_settlement: str = "0"
         try:
             locator = page.locator(f"xpath={settings.xpath_pending_balance}")
             locator.wait_for(state="visible", timeout=timeout)
-            pending_settlement = locator.text_content()
+            text = locator.text_content()
+            if text:
+                pending_settlement = text.replace("$", "")
         except Exception:  # noqa: BLE001
             pass
 
         time.sleep(delay)
 
-        payout_on_hold: str | None = None
+        payout_on_hold: str = "0"
         try:
             locator = page.locator(f"xpath={settings.xpath_on_hold}")
             locator.wait_for(state="visible", timeout=timeout)
-            payout_on_hold = locator.text_content()
+            text = locator.text_content()
+            if text:
+                payout_on_hold = text.replace("$", "")
         except Exception:  # noqa: BLE001
             pass
 
