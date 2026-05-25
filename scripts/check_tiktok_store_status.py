@@ -65,6 +65,8 @@ def _process_store(
     settings,
     log: logging.Logger,
     store_id: int,
+    tt_shop_code: str,
+    region: str,
     profile_id: str,
 ) -> int:
     """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
@@ -96,7 +98,7 @@ def _process_store(
     exit_code = EXIT_OK
     try:
         try:
-            status_data = check_seller_status(result.ws_url, log, settings)
+            status_data = check_seller_status(result.ws_url, log, settings, region)
         except KeyboardInterrupt:
             log.info("Interrupted by user; stopping profile early.")
         except Exception as exc:  # noqa: BLE001
@@ -111,6 +113,7 @@ def _process_store(
                     settings.hma_http_timeout,
                     settings.supover_api_key_header,
                     store_id=store_id,
+                    tt_shop_code=tt_shop_code,
                     profile_id=profile_id,
                     **status_data,
                 )
@@ -188,12 +191,12 @@ def main() -> int:
     log.info("Found %d eligible store(s) to process.", len(pairs))
 
     worst_code = EXIT_OK
-    for i, (store_id, profile_id) in enumerate(pairs, 1):
+    for i, (store_id, shop_code, region, profile_id) in enumerate(pairs, 1):
         log.info(
-            "--- Store %d/%d: store_id=%s profile_id=%s ---",
-            i, len(pairs), store_id, profile_id,
+            "--- Store %d/%d: store_id=%s shop_code=%s region=%s profile_id=%s ---",
+            i, len(pairs), store_id, shop_code, region, profile_id,
         )
-        code = _process_store(session, settings, log, store_id, profile_id)
+        code = _process_store(session, settings, log, store_id, shop_code, region, profile_id)
         if code > worst_code:
             worst_code = code
 

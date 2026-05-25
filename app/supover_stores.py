@@ -22,24 +22,26 @@ def push_store_status(
     api_key_header: str,
     *,
     store_id: int,
+    tt_shop_code: str,
     profile_id: str,
-    pending_balance: str | None,
-    on_hold: str | None,
-    bank_account: str | None,
-    account_status: str | None,
+    pending_settlement: str | None,
+    payout_on_hold: str | None,
+    bank_account_number: str | None,
+    shop_status: str | None,
 ) -> requests.Response:
     """POST extracted seller status to the Supover stores sync endpoint."""
     key, target = validate_api_credentials(api_key, url, "SUPOVER_STORES_SYNC_URL")
     headers = build_api_headers(api_key_header, key)
     payload = {
         "store_id": store_id,
+        "tt_shop_code": tt_shop_code,
         "profile_id": profile_id,
-        "pending_balance": pending_balance,
-        "on_hold": on_hold,
-        "bank_account": bank_account,
-        "account_status": account_status,
+        "pending_settlement": pending_settlement,
+        "payout_on_hold": payout_on_hold,
+        "bank_account_number": bank_account_number,
+        "shop_status": shop_status,
     }
-    logging.info("POST %s store_id=%s profile_id=%s", target, store_id, profile_id)
+    logging.info("POST %s store_id=%s tt_shop_code=%s profile_id=%s", target, store_id, tt_shop_code, profile_id)
     return session.post(target, json=payload, headers=headers, timeout=timeout)
 
 
@@ -93,9 +95,9 @@ def fetch_dead_stores_with_balance(
 
 def all_store_and_profile_ids(
     stores: list[dict[str, Any]],
-) -> list[tuple[int, str]]:
-    """Return all ``(store_id, profile_id)`` pairs from eligible stores."""
-    results: list[tuple[int, str]] = []
+) -> list[tuple[int, str, str, str]]:
+    """Return all ``(store_id, shop_code, region, profile_id)`` tuples from eligible stores."""
+    results: list[tuple[int, str, str, str]] = []
     for store in stores:
         profile_hma = store.get("profile_hma")
         if not isinstance(profile_hma, dict):
@@ -106,7 +108,12 @@ def all_store_and_profile_ids(
         sid = store.get("store_id")
         if sid is None:
             continue
-        results.append((int(sid), pid.strip()))
+        shop_code = store.get("shop_code")
+        if not (isinstance(shop_code, str) and shop_code.strip()):
+            continue
+        region = store.get("region")
+        region = region.strip().lower() if isinstance(region, str) and region.strip() else "us"
+        results.append((int(sid), shop_code.strip(), region, pid.strip()))
     return results
 
 

@@ -46,80 +46,84 @@ def _attach_to_profile(ws_url: str) -> Iterator["BrowserContext"]:
 
 
 def check_seller_status(
-    ws_url: str, log: logging.Logger, settings: "Settings",
+    ws_url: str, log: logging.Logger, settings: "Settings", region: str = "us",
 ) -> dict[str, str | None]:
-    """Extract pending balance, on-hold, bank account, and account status.
+    """Extract pending settlement, payout on hold, bank account number, and shop status.
 
-    Returns a dict with keys: pending_balance, on_hold, bank_account,
-    account_status. Values are ``None`` when the element was not found.
+    Returns a dict with keys: pending_settlement, payout_on_hold, bank_account_number,
+    shop_status. Values are ``None`` when the element was not found.
     """
     timeout = settings.tiktok_element_timeout
     delay = settings.tiktok_step_delay
 
+    seller_bills_url = settings.tiktok_seller_bills_url.format(region=region)
+    health_center_url = settings.tiktok_health_center_url.format(region=region)
+
     with _attach_to_profile(ws_url) as context:
         page = context.new_page()
 
-        page.goto(settings.tiktok_seller_bills_url, wait_until="domcontentloaded")
+        page.goto(seller_bills_url, wait_until="domcontentloaded")
         log.info("Seller bills loaded: url=%s", page.url)
 
-        pending_balance: str | None = None
+        pending_settlement: str | None = None
         try:
             locator = page.locator(f"xpath={settings.xpath_pending_balance}")
             locator.wait_for(state="visible", timeout=timeout)
-            pending_balance = locator.text_content()
+            pending_settlement = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
         time.sleep(delay)
 
-        on_hold: str | None = None
+        payout_on_hold: str | None = None
         try:
             locator = page.locator(f"xpath={settings.xpath_on_hold}")
             locator.wait_for(state="visible", timeout=timeout)
-            on_hold = locator.text_content()
+            payout_on_hold = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
         time.sleep(delay)
 
-        bank_account: str | None = None
+        bank_account_number: str | None = None
         try:
             locator = page.locator(f"xpath={settings.xpath_bank_account}")
             locator.wait_for(state="visible", timeout=timeout)
-            bank_account = locator.text_content()
+            bank_account_number = locator.text_content()
         except Exception:  # noqa: BLE001
             pass
 
         time.sleep(delay)
 
-        page.goto(settings.tiktok_health_center_url, wait_until="domcontentloaded")
+        page.goto(health_center_url, wait_until="domcontentloaded")
         log.info("Health center loaded: url=%s", page.url)
+        time.sleep(delay)
 
-        account_status: str | None = None
+        shop_status: str | None = None
         try:
             locator = page.locator(f"xpath={settings.xpath_account_status}")
             locator.wait_for(state="visible", timeout=timeout)
             text = (locator.text_content() or "").strip()
             if text == settings.tiktok_account_deactivated_text:
-                account_status = text
+                shop_status = text
         except Exception:  # noqa: BLE001
             pass
 
         time.sleep(delay)
 
         result = {
-            "pending_balance": pending_balance,
-            "on_hold": on_hold,
-            "bank_account": bank_account,
-            "account_status": account_status,
+            "pending_settlement": pending_settlement,
+            "payout_on_hold": payout_on_hold,
+            "bank_account_number": bank_account_number,
+            "shop_status": shop_status,
         }
 
         log.info(
-            "pending_balance=%s on_hold=%s bank_account=%s account_status=%s",
-            pending_balance,
-            on_hold,
-            bank_account,
-            account_status,
+            "pending_settlement=%s payout_on_hold=%s bank_account_number=%s shop_status=%s",
+            pending_settlement,
+            payout_on_hold,
+            bank_account_number,
+            shop_status,
         )
 
         return result
