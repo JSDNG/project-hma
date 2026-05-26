@@ -122,16 +122,16 @@ All variables are **required** in `.env` (no hardcoded defaults in code). See `.
 | `SUPOVER_SYNC_URL` | Endpoint for scheduled HMA profiles sync. |
 | `SUPOVER_DEAD_STORES_URL` | Endpoint to fetch dead-with-balance stores. |
 | `SUPOVER_STORES_SYNC_URL` | Endpoint to push store status data. |
-| `TIKTOK_SELLER_BILLS_URL` | TikTok Seller bills page URL. |
-| `TIKTOK_HEALTH_CENTER_URL` | TikTok health center page URL. |
-| `TIKTOK_ACCOUNT_DEACTIVATED_TEXT` | Text to match for deactivated accounts. |
+| `TIKTOK_SELLER_BILLS_URL` | TikTok Seller bills page URL (with `{region}` placeholder). |
+| `TIKTOK_SHOP_INFO_API_URL` | TikTok shop info API URL (with `{region}` placeholder). |
 | `TIKTOK_ELEMENT_TIMEOUT` | Playwright element wait timeout (ms). |
 | `TIKTOK_STEP_DELAY` | Delay between extraction steps (seconds). |
 | `TIKTOK_DWELL_SECONDS` | Browser dwell time before stopping profile. |
 | `XPATH_PENDING_BALANCE` | XPath for pending balance element. |
 | `XPATH_ON_HOLD` | XPath for on-hold element. |
 | `XPATH_BANK_ACCOUNT` | XPath for bank account element. |
-| `XPATH_ACCOUNT_STATUS` | XPath for account status element. |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for error notifications. |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for error notifications. |
 
 Setting variables directly (without a `.env`) — for one-off runs:
 

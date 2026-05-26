@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     xpath_on_hold: str = ""
     xpath_bank_account: str = ""
 
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

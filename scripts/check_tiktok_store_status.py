@@ -44,6 +44,7 @@ from app.hma_sync import (  # noqa: E402
     start_profile,
     stop_profile,
 )
+from app.helpers.telegram import send_telegram_message  # noqa: E402
 from app.profile_actions import check_seller_status  # noqa: E402
 from app.supover_stores import (  # noqa: E402
     all_store_and_profile_ids,
@@ -58,6 +59,7 @@ EXIT_CONFIG = 1
 EXIT_SUPOVER = 2
 EXIT_HMA = 3
 EXIT_PLAYWRIGHT = 4
+EXIT_ELEMENT_READ = 5
 
 
 def _process_store(
@@ -68,6 +70,7 @@ def _process_store(
     tt_shop_code: str,
     region: str,
     profile_id: str,
+    profile_name: str,
 ) -> int:
     """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
     try:
@@ -99,25 +102,54 @@ def _process_store(
             log.error("Playwright error: %s", exc)
             exit_code = EXIT_PLAYWRIGHT
         else:
-            try:
-                sync_resp = push_store_status(
-                    session,
-                    settings.supover_stores_sync_url,
-                    settings.supover_api_key,
-                    settings.hma_http_timeout,
-                    settings.supover_api_key_header,
-                    store_id=store_id,
-                    tt_shop_code=tt_shop_code,
-                    profile_id=profile_id,
-                    **status_data,
+            errors: list[str] = []
+            if status_data["pending_settlement"] == "0" and status_data["payout_on_hold"] == "0":
+                errors.append("pending_settlement and payout_on_hold both returned '0'")
+            if status_data["bank_account_number"] is None:
+                errors.append("bank_account_number not found")
+            if status_data["shop_status"] is None:
+                errors.append("shop_status API returned no data")
+
+            if errors:
+                error_detail = "; ".join(errors)
+                log.error(
+                    "Element read error for store_id=%s shop_code=%s profile_id=%s: %s",
+                    store_id, tt_shop_code, profile_id, error_detail,
                 )
-                log.info(
-                    "Supover stores/sync responded HTTP %s: %s",
-                    sync_resp.status_code,
-                    (sync_resp.text or "")[:300],
+                send_telegram_message(
+                    settings.telegram_bot_token,
+                    settings.telegram_chat_id,
+                    (
+                        f"<b>Tool HMA TikTok Element Read Error</b>\n"
+                        f"Store ID: {store_id}\n"
+                        f"Shop Code: {tt_shop_code}\n"
+                        f"Profile ID: {profile_id}\n"
+                        f"Profile Name: {profile_name}\n"
+                        f"Error: {error_detail}"
+                    ),
                 )
-            except (requests.RequestException, ValueError) as exc:
-                log.error("Supover stores/sync failed: %s", exc)
+                exit_code = EXIT_ELEMENT_READ
+            else:
+                try:
+                    sync_resp = push_store_status(
+                        session,
+                        settings.supover_stores_sync_url,
+                        settings.supover_api_key,
+                        settings.hma_http_timeout,
+                        settings.supover_api_key_header,
+                        store_id=store_id,
+                        tt_shop_code=tt_shop_code,
+                        profile_id=profile_id,
+                        **status_data,
+                    )
+                    log.info(
+                        "Supover stores/sync responded HTTP %s: %s",
+                        sync_resp.status_code,
+                        (sync_resp.text or "")[:300],
+                    )
+                except (requests.RequestException, ValueError) as exc:
+                    log.error("Supover stores/sync failed: %s", exc)
+
             try:
                 time.sleep(settings.tiktok_dwell_seconds)
             except KeyboardInterrupt:
@@ -182,14 +214,17 @@ def main() -> int:
     log.info("Found %d eligible store(s) to process.", len(pairs))
 
     worst_code = EXIT_OK
-    for i, (store_id, shop_code, region, profile_id) in enumerate(pairs, 1):
+    for i, (store_id, shop_code, region, profile_id, profile_name) in enumerate(pairs, 1):
         log.info(
-            "--- Store %d/%d: store_id=%s shop_code=%s region=%s profile_id=%s ---",
-            i, len(pairs), store_id, shop_code, region, profile_id,
+            "--- Store %d/%d: store_id=%s shop_code=%s region=%s profile_id=%s profile_name=%s ---",
+            i, len(pairs), store_id, shop_code, region, profile_id, profile_name,
         )
-        code = _process_store(session, settings, log, store_id, shop_code, region, profile_id)
+        code = _process_store(session, settings, log, store_id, shop_code, region, profile_id, profile_name)
         if code > worst_code:
             worst_code = code
+        if code == EXIT_ELEMENT_READ:
+            log.error("Element read failure — aborting remaining stores.")
+            break
 
     return worst_code
 

@@ -43,7 +43,8 @@ project-hma/
 │   └── helpers/                      # Shared utilities
 │       ├── __init__.py
 │       ├── http.py                   # validate_api_credentials(), build_api_headers()
-│       └── logging.py                # setup_logging()
+│       ├── logging.py                # setup_logging()
+│       └── telegram.py              # send_telegram_message()
 │
 ├── scripts/                          # OS-scheduled jobs (run outside the FastAPI process)
 │   ├── sync_to_supover.py            # CLI entry point: HMA -> Supover profiles sync
@@ -96,6 +97,12 @@ project-hma/
 
 Used by: `supover_sync.py`, `supover_stores.py`.
 
+### `app/helpers/telegram.py`  (Telegram notifications)
+
+- `send_telegram_message(bot_token, chat_id, text, *, timeout=10) -> bool` — sends a message via Telegram Bot API; returns `False` on failure (never raises)
+
+Used by: `scripts/check_tiktok_store_status.py`.
+
 ### `app/helpers/logging.py`  (shared logging)
 
 - `setup_logging(log_file=None, level="INFO")` — configures root logger (stdout + optional file)
@@ -119,7 +126,7 @@ All parameters (paths, timeouts, success codes) come from callers — no hardcod
 
 ### `app/profile_actions.py`  (browser automation)
 
-- `check_seller_status(ws_url, log, settings) -> dict[str, str | None]` — navigates TikTok Seller pages, extracts 4 fields (pending_balance, on_hold, bank_account, account_status)
+- `check_seller_status(ws_url, log, settings, region) -> dict[str, str | None]` — navigates TikTok Seller bills page, extracts 3 DOM fields (pending_settlement, payout_on_hold, bank_account_number) + 1 API field (shop_status)
 
 Uses Playwright over CDP. All URLs, XPaths, timeouts, and delays come from `settings` (`.env`).
 
@@ -127,8 +134,7 @@ Uses Playwright over CDP. All URLs, XPaths, timeouts, and delays come from `sett
 
 - `push_store_status(...)` — POST store status to Supover
 - `fetch_dead_stores_with_balance(...)` — GET dead stores with balance
-- `all_store_and_profile_ids(stores)` — extract all eligible (store_id, profile_id) pairs
-- `first_store_and_profile_id(stores)` / `first_profile_id(stores)` — extract first eligible
+- `all_store_and_profile_ids(stores)` — extract all eligible (store_id, tt_shop_code, region, profile_id) tuples
 
 ### `app/config.py`
 
@@ -189,9 +195,10 @@ daily via Windows Task Scheduler (`scripts/setup_sync_task.ps1`).
 
 For each dead-with-balance store from Supover:
 1. Start HMA profile → get `wsUrl`
-2. Navigate TikTok Seller pages → extract 4 fields
-3. POST data back to Supover `/api/hma/stores/sync`
-4. Dwell → stop profile
+2. Navigate TikTok Seller bills page → extract 3 DOM fields + 1 API field
+3. Validate results — if element read or API call failed, send Telegram notification and skip push
+4. POST data back to Supover `/api/hma/stores/sync`
+5. Dwell → stop profile
 
 Runs every 2 days via Windows Task Scheduler (`scripts/setup_tiktok_store_status_task.ps1`).
 

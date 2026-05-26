@@ -94,9 +94,9 @@ def fetch_dead_stores_with_balance(
 
 def all_store_and_profile_ids(
     stores: list[dict[str, Any]],
-) -> list[tuple[int, str, str, str]]:
-    """Return all ``(store_id, shop_code, region, profile_id)`` tuples from eligible stores."""
-    results: list[tuple[int, str, str, str]] = []
+) -> list[tuple[int, str, str, str, str]]:
+    """Return all ``(store_id, shop_code, region, profile_id, profile_name)`` tuples from eligible stores."""
+    results: list[tuple[int, str, str, str, str]] = []
     for store in stores:
         profile_hma = store.get("profile_hma")
         if not isinstance(profile_hma, dict):
@@ -104,6 +104,7 @@ def all_store_and_profile_ids(
         pid = profile_hma.get("profile_id")
         if not (isinstance(pid, str) and pid.strip()):
             continue
+        pname = profile_hma.get("profile_name") or ""
         sid = store.get("store_id")
         if sid is None:
             continue
@@ -112,7 +113,7 @@ def all_store_and_profile_ids(
             continue
         region = store.get("region")
         region = region.strip().lower() if isinstance(region, str) and region.strip() else "us"
-        results.append((int(sid), shop_code.strip(), region, pid.strip()))
+        results.append((int(sid), shop_code.strip(), region, pid.strip(), str(pname).strip()))
     return results
 
 

@@ -38,6 +38,8 @@ def settings() -> Settings:
         xpath_pending_balance="//test/xpath",
         xpath_on_hold="//test/xpath",
         xpath_bank_account="//test/xpath",
+        telegram_bot_token="test-bot-token",
+        telegram_chat_id="test-chat-id",
     )
 
 

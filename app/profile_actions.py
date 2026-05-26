@@ -72,7 +72,7 @@ def check_seller_status(
             if text:
                 pending_settlement = text.replace("$", "")
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("Failed to read pending_settlement element.")
 
         time.sleep(delay)
 
@@ -84,7 +84,7 @@ def check_seller_status(
             if text:
                 payout_on_hold = text.replace("$", "")
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("Failed to read payout_on_hold element.")
 
         time.sleep(delay)
 
@@ -94,7 +94,7 @@ def check_seller_status(
             locator.wait_for(state="visible", timeout=timeout)
             bank_account_number = locator.text_content()
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("Failed to read bank_account_number element.")
 
         time.sleep(delay)
 
