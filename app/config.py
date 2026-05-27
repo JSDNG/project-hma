@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supover_dead_stores_url: str = ""
     supover_stores_sync_url: str = ""
 
+    tiktok_seller_login_url: str = ""
     tiktok_seller_bills_url: str = ""
     tiktok_shop_info_api_url: str = ""
     tiktok_element_timeout: int = 15000

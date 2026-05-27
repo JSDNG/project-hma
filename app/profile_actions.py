@@ -56,12 +56,28 @@ def check_seller_status(
     timeout = settings.tiktok_element_timeout
     delay = settings.tiktok_step_delay
 
+    seller_login_url = settings.tiktok_seller_login_url.format(region=region)
     seller_bills_url = settings.tiktok_seller_bills_url.format(region=region)
     shop_info_api_url = settings.tiktok_shop_info_api_url.format(region=region)
 
     with _attach_to_profile(ws_url) as context:
         page = context.new_page()
 
+        page.goto(seller_login_url, wait_until="load")
+        page.wait_for_load_state("networkidle", timeout=timeout)
+        time.sleep(delay)
+
+        if "homepage" not in page.url:
+            log.warning("Account not logged in — current URL: %s", page.url)
+            return {
+                "pending_settlement": "0",
+                "payout_on_hold": "0",
+                "bank_account_number": None,
+                "shop_status": None,
+                "all_elements_missing": True,
+            }
+
+        log.info("Account is logged in — redirected to: %s", page.url)
         page.goto(seller_bills_url, wait_until="domcontentloaded")
 
         pending_found = False
