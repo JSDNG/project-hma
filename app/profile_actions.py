@@ -64,6 +64,7 @@ def check_seller_status(
 
         page.goto(seller_bills_url, wait_until="domcontentloaded")
 
+        pending_found = False
         pending_settlement: str = "0"
         try:
             locator = page.locator(f"xpath={settings.xpath_pending_balance}")
@@ -71,11 +72,13 @@ def check_seller_status(
             text = locator.text_content()
             if text:
                 pending_settlement = text.replace("$", "")
+            pending_found = True
         except Exception:  # noqa: BLE001
             log.warning("Failed to read pending_settlement element.")
 
         time.sleep(delay)
 
+        payout_found = False
         payout_on_hold: str = "0"
         try:
             locator = page.locator(f"xpath={settings.xpath_on_hold}")
@@ -83,16 +86,19 @@ def check_seller_status(
             text = locator.text_content()
             if text:
                 payout_on_hold = text.replace("$", "")
+            payout_found = True
         except Exception:  # noqa: BLE001
             log.warning("Failed to read payout_on_hold element.")
 
         time.sleep(delay)
 
+        bank_found = False
         bank_account_number: str | None = None
         try:
             locator = page.locator(f"xpath={settings.xpath_bank_account}")
             locator.wait_for(state="visible", timeout=timeout)
             bank_account_number = locator.text_content()
+            bank_found = True
         except Exception:  # noqa: BLE001
             log.warning("Failed to read bank_account_number element.")
 
@@ -120,6 +126,7 @@ def check_seller_status(
             "payout_on_hold": payout_on_hold,
             "bank_account_number": bank_account_number,
             "shop_status": shop_status,
+            "all_elements_missing": not pending_found and not payout_found and not bank_found,
         }
 
         log.info(

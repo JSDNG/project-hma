@@ -19,6 +19,8 @@ Exit codes (Task Scheduler "Last Run Result"-friendly):
   2  Supover unreachable / bad response / no eligible profile.
   3  local HMA /profiles/start failed (at least once).
   4  Playwright connect or navigation error (at least once).
+  5  element read failure (at least once) — aborts remaining stores.
+  6  not logged in (at least once) — skips store, continues to next.
 
 Run manually:
     python -m scripts.check_tiktok_store_status
@@ -60,6 +62,7 @@ EXIT_SUPOVER = 2
 EXIT_HMA = 3
 EXIT_PLAYWRIGHT = 4
 EXIT_ELEMENT_READ = 5
+EXIT_NOT_LOGGED_IN = 6
 
 
 def _process_store(
@@ -102,53 +105,74 @@ def _process_store(
             log.error("Playwright error: %s", exc)
             exit_code = EXIT_PLAYWRIGHT
         else:
-            errors: list[str] = []
-            if status_data["pending_settlement"] == "0" and status_data["payout_on_hold"] == "0":
-                errors.append("pending_settlement and payout_on_hold both returned '0'")
-            if status_data["bank_account_number"] is None:
-                errors.append("bank_account_number not found")
-            if status_data["shop_status"] is None:
-                errors.append("shop_status API returned no data")
+            all_elements_missing = status_data.pop("all_elements_missing", False)
 
-            if errors:
-                error_detail = "; ".join(errors)
-                log.error(
-                    "Element read error for store_id=%s shop_code=%s profile_id=%s: %s",
-                    store_id, tt_shop_code, profile_id, error_detail,
+            if all_elements_missing:
+                log.warning(
+                    "All elements missing (likely not logged in) for store_id=%s shop_code=%s profile_id=%s",
+                    store_id, tt_shop_code, profile_id,
                 )
                 send_telegram_message(
                     settings.telegram_bot_token,
                     settings.telegram_chat_id,
                     (
-                        f"<b>Tool HMA TikTok Element Read Error</b>\n"
+                        f"<b>Tool HMA TikTok Not Logged In</b>\n"
                         f"Store ID: {store_id}\n"
                         f"Shop Code: {tt_shop_code}\n"
                         f"Profile ID: {profile_id}\n"
                         f"Profile Name: {profile_name}\n"
-                        f"Error: {error_detail}"
+                        f"Error: All billing elements missing — account may not be logged in"
                     ),
                 )
-                exit_code = EXIT_ELEMENT_READ
+                exit_code = EXIT_NOT_LOGGED_IN
             else:
-                try:
-                    sync_resp = push_store_status(
-                        session,
-                        settings.supover_stores_sync_url,
-                        settings.supover_api_key,
-                        settings.hma_http_timeout,
-                        settings.supover_api_key_header,
-                        store_id=store_id,
-                        tt_shop_code=tt_shop_code,
-                        profile_id=profile_id,
-                        **status_data,
+                errors: list[str] = []
+                if status_data["pending_settlement"] == "0" and status_data["payout_on_hold"] == "0":
+                    errors.append("pending_settlement and payout_on_hold both returned '0'")
+                if status_data["bank_account_number"] is None:
+                    errors.append("bank_account_number not found")
+                if status_data["shop_status"] is None:
+                    errors.append("shop_status API returned no data")
+
+                if errors:
+                    error_detail = "; ".join(errors)
+                    log.error(
+                        "Element read error for store_id=%s shop_code=%s profile_id=%s: %s",
+                        store_id, tt_shop_code, profile_id, error_detail,
                     )
-                    log.info(
-                        "Supover stores/sync responded HTTP %s: %s",
-                        sync_resp.status_code,
-                        (sync_resp.text or "")[:300],
+                    send_telegram_message(
+                        settings.telegram_bot_token,
+                        settings.telegram_chat_id,
+                        (
+                            f"<b>Tool HMA TikTok Element Read Error</b>\n"
+                            f"Store ID: {store_id}\n"
+                            f"Shop Code: {tt_shop_code}\n"
+                            f"Profile ID: {profile_id}\n"
+                            f"Profile Name: {profile_name}\n"
+                            f"Error: {error_detail}"
+                        ),
                     )
-                except (requests.RequestException, ValueError) as exc:
-                    log.error("Supover stores/sync failed: %s", exc)
+                    exit_code = EXIT_ELEMENT_READ
+                else:
+                    try:
+                        sync_resp = push_store_status(
+                            session,
+                            settings.supover_stores_sync_url,
+                            settings.supover_api_key,
+                            settings.hma_http_timeout,
+                            settings.supover_api_key_header,
+                            store_id=store_id,
+                            tt_shop_code=tt_shop_code,
+                            profile_id=profile_id,
+                            **status_data,
+                        )
+                        log.info(
+                            "Supover stores/sync responded HTTP %s: %s",
+                            sync_resp.status_code,
+                            (sync_resp.text or "")[:300],
+                        )
+                    except (requests.RequestException, ValueError) as exc:
+                        log.error("Supover stores/sync failed: %s", exc)
 
             try:
                 time.sleep(settings.tiktok_dwell_seconds)
