@@ -197,7 +197,7 @@ def main() -> int:
             settings.hma_http_timeout,
             settings.supover_api_key_header,
             page=1,
-            limit=2,
+            limit=100,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)

@@ -91,6 +91,44 @@ python -m scripts.check_tiktok_store_status
 
 Log file: `logs/check_tiktok_store_status.log`
 
+## Lên lịch chạy tự động (Windows Task Scheduler)
+
+Script chạy **mỗi 2 ngày lúc 04:00** qua Windows Task Scheduler.
+
+### Setup
+
+Mở **PowerShell** rồi chạy:
+
+```powershell
+.\scripts\setup_tiktok_store_status_task.ps1
+```
+
+Nếu muốn task chạy cả khi không login:
+
+```powershell
+.\scripts\setup_tiktok_store_status_task.ps1 -RunWhetherLoggedOn
+```
+
+### Test
+
+```powershell
+Start-ScheduledTask -TaskName 'HMA-TikTok-Store-Status'
+```
+
+### Log
+
+| File | Nội dung |
+|---|---|
+| `logs/tiktok_store_status.bat.log` | Output từ batch launcher |
+| `logs/check_tiktok_store_status.log` | Log chi tiết từ Python |
+
+### File liên quan
+
+| File | Vai trò |
+|---|---|
+| `scripts/setup_tiktok_store_status_task.ps1` | Đăng ký scheduled task (2 ngày/lần, 04:00) |
+| `scripts/run_tiktok_store_status.bat` | Batch launcher (activate venv, chạy Python, ghi log) |
+
 ## Cấu hình
 
 Tất cả thông số nằm trong `.env`, không hardcode trong code:
