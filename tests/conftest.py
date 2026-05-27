@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import pytest
-from fastapi.testclient import TestClient
 
-from app.auth import API_KEY_HEADER_NAME
-from app.config import Settings, get_settings
-from app.main import app
+from app.config import Settings
 
 TEST_SYNC_API_KEY = "test-sync-key"
 
@@ -30,6 +25,7 @@ def settings() -> Settings:
         supover_sync_url="https://supover.test/api/hma/profiles/sync",
         supover_dead_stores_url="https://supover.test/api/hma/stores/dead-with-balance",
         supover_stores_sync_url="https://supover.test/api/hma/stores/sync",
+        tiktok_seller_login_url="https://seller-{region}.tiktok.com/account/login",
         tiktok_seller_bills_url="https://seller-us.tiktok.com/finance/bills",
         tiktok_shop_info_api_url="https://seller-{region}.tiktok.com/api/v1/seller/common/get",
         tiktok_element_timeout=15000,
@@ -41,20 +37,3 @@ def settings() -> Settings:
         telegram_bot_token="test-bot-token",
         telegram_chat_id="test-chat-id",
     )
-
-
-@pytest.fixture
-def client(settings: Settings) -> Iterator[TestClient]:
-    app.dependency_overrides[get_settings] = lambda: settings
-    with TestClient(app, headers={API_KEY_HEADER_NAME: TEST_SYNC_API_KEY}) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def unauth_client(settings: Settings) -> Iterator[TestClient]:
-    """TestClient with no default x-api-key header — for auth tests."""
-    app.dependency_overrides[get_settings] = lambda: settings
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()

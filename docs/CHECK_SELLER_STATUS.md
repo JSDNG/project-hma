@@ -5,8 +5,15 @@ Browser action chạy trên HMA profile để lấy 4 thông tin từ TikTok Sel
 ## Flow
 
 ```
-Bills page ──► pending_balance ──delay──► on_hold ──delay──► bank_account ──delay──► shop_status (API) ──delay──► Validate ──► POST Supover ──► Dwell
+Login page ──► Check redirect ──► Bills page ──► pending_balance ──delay──► on_hold ──delay──► bank_account ──delay──► shop_status (API) ──delay──► Validate ──► POST Supover ──► Dwell
 ```
+
+### Bước 0 — Login Check
+
+- URL: `TIKTOK_SELLER_LOGIN_URL` (có `{region}` placeholder)
+- Chờ trang load hoàn toàn (`load` + `networkidle`) + `TIKTOK_STEP_DELAY` giây
+- Nếu URL chứa `homepage` → đã đăng nhập → tiếp tục bước 1
+- Nếu URL không chứa `homepage` → chưa đăng nhập → gửi Telegram, skip store, chuyển store kế tiếp
 
 ### Bước 1 — Pending Balance (trang Bills)
 
@@ -44,18 +51,24 @@ Trước khi POST, script validate kết quả:
 
 | Điều kiện | Ý nghĩa |
 |---|---|
+| Cả 3 element đều không tìm thấy | Có thể chưa đăng nhập (all_elements_missing) |
 | `pending_settlement == "0"` **AND** `payout_on_hold == "0"` | Element read lỗi (cả 2 default) |
 | `bank_account_number is None` | Element read lỗi |
 | `shop_status is None` | API call lỗi hoặc không có data |
 
-Nếu bất kỳ điều kiện nào xảy ra:
+Nếu all_elements_missing:
+- Log warning
+- Gửi thông báo **Telegram** — "Not Logged In"
+- **KHÔNG push data** lên Supover
+- Exit code = `6` (`EXIT_NOT_LOGGED_IN`) — **tiếp tục store kế tiếp**
+
+Nếu có lỗi element read (nhưng không phải all missing):
 - Log error chi tiết
-- Gửi thông báo **Telegram** (bot token + chat_id từ `.env`)
-- **KHÔNG push data** lên Supover (tránh ghi đè data cũ bằng data rỗng)
-- Exit code = `5` (`EXIT_ELEMENT_READ`)
+- Gửi thông báo **Telegram** — "Element Read Error"
+- **KHÔNG push data** lên Supover
+- Exit code = `5` (`EXIT_ELEMENT_READ`) — **dừng toàn bộ**
 
 Nếu validate OK:
-- Log 4 giá trị: `pending_settlement`, `payout_on_hold`, `bank_account_number`, `shop_status`
 - POST tới `SUPOVER_STORES_SYNC_URL` với `store_id`, `tt_shop_code`, `profile_id`, và 4 field trên
 
 ### Bước 6 — Dwell
@@ -71,13 +84,14 @@ Nếu validate OK:
 | `2` | Supover unreachable / bad response / no eligible profile |
 | `3` | HMA /profiles/start failed |
 | `4` | Playwright connect hoặc navigation error |
-| `5` | Element read error (validate fail → đã gửi Telegram) |
+| `5` | Element read error (validate fail → đã gửi Telegram, dừng toàn bộ) |
+| `6` | Not logged in (đã gửi Telegram, tiếp tục store kế tiếp) |
 
 ## File liên quan
 
 | File | Vai trò |
 |---|---|
-| `app/profile_actions.py` | Hàm `check_seller_status` — đọc element + gọi API |
+| `app/profile_actions.py` | Hàm `check_seller_status` — login check, đọc element, gọi API |
 | `app/supover_stores.py` | Hàm `push_store_status` POST về Supover |
 | `app/helpers/telegram.py` | Hàm `send_telegram_message` gửi thông báo lỗi |
 | `scripts/check_tiktok_store_status.py` | Script orchestration (loop qua stores, validate, notify) |
@@ -96,8 +110,6 @@ Log file: `logs/check_tiktok_store_status.log`
 Script chạy **mỗi 2 ngày lúc 04:00** qua Windows Task Scheduler.
 
 ### Setup
-
-Mở **PowerShell** rồi chạy:
 
 ```powershell
 .\scripts\setup_tiktok_store_status_task.ps1
@@ -122,18 +134,12 @@ Start-ScheduledTask -TaskName 'HMA-TikTok-Store-Status'
 | `logs/tiktok_store_status.bat.log` | Output từ batch launcher |
 | `logs/check_tiktok_store_status.log` | Log chi tiết từ Python |
 
-### File liên quan
-
-| File | Vai trò |
-|---|---|
-| `scripts/setup_tiktok_store_status_task.ps1` | Đăng ký scheduled task (2 ngày/lần, 04:00) |
-| `scripts/run_tiktok_store_status.bat` | Batch launcher (activate venv, chạy Python, ghi log) |
-
 ## Cấu hình
 
 Tất cả thông số nằm trong `.env`, không hardcode trong code:
 
 ```env
+TIKTOK_SELLER_LOGIN_URL=https://seller-{region}.tiktok.com/account/login
 TIKTOK_SELLER_BILLS_URL=https://seller-{region}.tiktok.com/finance/bills
 TIKTOK_SHOP_INFO_API_URL=https://seller-{region}.tiktok.com/api/v1/seller/common/get
 TIKTOK_ELEMENT_TIMEOUT=15000
