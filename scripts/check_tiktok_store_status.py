@@ -91,6 +91,18 @@ def _process_store(
     result = interpret_start_response(start_resp, settings.hma_start_success_code)
     if not result.ok:
         log.error("HMA /profiles/start failed: %s", result.error)
+        send_telegram_message(
+            settings.telegram_bot_token,
+            settings.telegram_chat_id,
+            (
+                f"<b>Tool HMA TikTok Profile In Use</b>\n"
+                f"Store ID: {store_id}\n"
+                f"Shop Code: {tt_shop_code}\n"
+                f"Profile ID: {profile_id}\n"
+                f"Profile Name: {profile_name}\n"
+                f"Error: Cannot open profile — seller is currently using it (HMA: {result.error})"
+            ),
+        )
         return EXIT_HMA
 
     assert result.ws_url is not None
@@ -103,6 +115,19 @@ def _process_store(
             log.info("Interrupted by user; stopping profile early.")
         except Exception as exc:  # noqa: BLE001
             log.error("Playwright error: %s", exc)
+            send_telegram_message(
+                settings.telegram_bot_token,
+                settings.telegram_chat_id,
+                (
+                    f"<b>Tool HMA TikTok Playwright Error</b>\n"
+                    f"Store ID: {store_id}\n"
+                    f"Shop Code: {tt_shop_code}\n"
+                    f"Profile ID: {profile_id}\n"
+                    f"Profile Name: {profile_name}\n"
+                    f"Error: Proxy is dead — cannot reach TikTok seller page\n"
+                    f"Details: {exc}"
+                ),
+            )
             exit_code = EXIT_PLAYWRIGHT
         else:
             all_elements_missing = status_data.pop("all_elements_missing", False)
@@ -227,7 +252,7 @@ def main() -> int:
             settings.hma_http_timeout,
             settings.supover_api_key_header,
             page=1,
-            limit=2,
+            limit=100,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)
