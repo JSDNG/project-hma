@@ -174,10 +174,16 @@ def _process_store(
                     except (requests.RequestException, ValueError) as exc:
                         log.error("Supover stores/sync failed: %s", exc)
 
-            try:
-                time.sleep(settings.tiktok_dwell_seconds)
-            except KeyboardInterrupt:
-                log.info("Dwell interrupted by user; stopping profile early.")
+            if exit_code == EXIT_OK:
+                try:
+                    time.sleep(settings.tiktok_dwell_seconds)
+                except KeyboardInterrupt:
+                    log.info("Dwell interrupted by user; stopping profile early.")
+            else:
+                log.info(
+                    "Skipping dwell because store ended with exit_code=%s.",
+                    exit_code,
+                )
     finally:
         try:
             stop_resp = stop_profile(
@@ -221,7 +227,7 @@ def main() -> int:
             settings.hma_http_timeout,
             settings.supover_api_key_header,
             page=1,
-            limit=100,
+            limit=2,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)

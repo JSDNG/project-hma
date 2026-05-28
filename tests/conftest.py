@@ -29,6 +29,7 @@ def settings() -> Settings:
         tiktok_seller_bills_url="https://seller-us.tiktok.com/finance/bills",
         tiktok_shop_info_api_url="https://seller-{region}.tiktok.com/api/v1/seller/common/get",
         tiktok_element_timeout=15000,
+        tiktok_login_wait_seconds=15,
         tiktok_step_delay=5,
         tiktok_dwell_seconds=300,
         xpath_pending_balance="//test/xpath",
