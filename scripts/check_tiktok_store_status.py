@@ -67,8 +67,8 @@ EXIT_NOT_LOGGED_IN = 6
 EXIT_PROXY_DEAD = 7
 
 PROXY_TEST_URL = "https://api.ipify.org?format=json"
-PROXY_TEST_TIMEOUT = 30
-PROXY_CHECK_DWELL_SECONDS = 30
+PROXY_TEST_TIMEOUT = 60
+PROXY_CHECK_DWELL_SECONDS = 60
 
 
 def _check_proxy_alive(
@@ -307,8 +307,8 @@ def main() -> int:
             settings.supover_api_key,
             settings.hma_http_timeout,
             settings.supover_api_key_header,
-            page=2,
-            limit=36,
+            page=1,
+            limit=100,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)
