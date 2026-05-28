@@ -56,6 +56,9 @@ def check_seller_status(
     timeout = settings.tiktok_element_timeout
     delay = settings.tiktok_step_delay
 
+    if region == "gb":
+        region = "uk"
+
     seller_login_url = settings.tiktok_seller_login_url.format(region=region)
     seller_bills_url = settings.tiktok_seller_bills_url.format(region=region)
     shop_info_api_url = settings.tiktok_shop_info_api_url.format(region=region)

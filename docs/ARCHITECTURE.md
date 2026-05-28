@@ -105,7 +105,7 @@ Uses Playwright over CDP. All URLs, XPaths, timeouts come from `settings`.
 
 - `push_store_status(...)` — POST store status to Supover
 - `fetch_dead_stores_with_balance(...)` — GET dead stores with balance
-- `all_store_and_profile_ids(stores)` — extract eligible (store_id, shop_code, region, profile_id, profile_name) tuples
+- `all_store_and_profile_ids(stores)` — return one `EligibleStore` NamedTuple per row (store_id, shop_code, region, profile_id, profile_name, proxy_host, proxy_port, proxy_username, proxy_password)
 
 ### `app/supover_sync.py`
 
@@ -127,13 +127,15 @@ daily via Windows Task Scheduler.
 ### TikTok store status check (`scripts/check_tiktok_store_status.py`)
 
 For each dead-with-balance store from Supover:
-1. Start HMA profile → get `wsUrl`
-2. Navigate to TikTok login page → verify session is active
-3. If not logged in → send Telegram alert, skip store, continue
-4. Navigate to bills page → extract 3 DOM fields + 1 API field
-5. Validate results — if element read failed, send Telegram alert
-6. POST data back to Supover
-7. Dwell → stop profile
+1. Test proxy via `api.ipify.org` → if dead, Telegram alert + skip store
+2. Start HMA profile → get `wsUrl` (HMA 400 → Telegram "Profile In Use" + skip)
+3. Navigate to TikTok login page (region `gb` auto-remapped to `uk`) → verify session is active
+4. If `page.goto` raises → Telegram "Playwright Error" + skip
+5. If not logged in → send Telegram alert, skip store, continue
+6. Navigate to bills page → extract 3 DOM fields + 1 API field
+7. Validate results — if element read failed, send Telegram alert
+8. POST data back to Supover
+9. Dwell → stop profile
 
 Runs every 2 days via Windows Task Scheduler.
 

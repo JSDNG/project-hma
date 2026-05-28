@@ -21,6 +21,7 @@ Exit codes (Task Scheduler "Last Run Result"-friendly):
   4  Playwright connect or navigation error (at least once).
   5  element read failure (at least once) — aborts remaining stores.
   6  not logged in (at least once) — skips store, continues to next.
+  7  proxy dead (at least once) — skips store, continues to next.
 
 Run manually:
     python -m scripts.check_tiktok_store_status
@@ -63,6 +64,29 @@ EXIT_HMA = 3
 EXIT_PLAYWRIGHT = 4
 EXIT_ELEMENT_READ = 5
 EXIT_NOT_LOGGED_IN = 6
+EXIT_PROXY_DEAD = 7
+
+PROXY_TEST_URL = "https://api.ipify.org?format=json"
+PROXY_TEST_TIMEOUT = 30
+PROXY_CHECK_DWELL_SECONDS = 30
+
+
+def _check_proxy_alive(
+    host: str, port: int | None, username: str, password: str,
+) -> tuple[bool, str | None]:
+    """GET ``PROXY_TEST_URL`` through ``host:port``. Return (alive, error)."""
+    if not host or not port:
+        return False, "proxy host/port missing"
+    auth = f"{username}:{password}@" if username and password else ""
+    proxy_url = f"http://{auth}{host}:{port}"
+    proxies = {"http": proxy_url, "https": proxy_url}
+    try:
+        resp = requests.get(PROXY_TEST_URL, proxies=proxies, timeout=PROXY_TEST_TIMEOUT)
+    except requests.RequestException as exc:
+        return False, str(exc)
+    if not (200 <= resp.status_code < 300):
+        return False, f"HTTP {resp.status_code}"
+    return True, None
 
 
 def _process_store(
@@ -74,8 +98,40 @@ def _process_store(
     region: str,
     profile_id: str,
     profile_name: str,
+    proxy_host: str,
+    proxy_port: int | None,
+    proxy_username: str,
+    proxy_password: str,
 ) -> int:
     """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
+    if proxy_host:
+        log.info("Testing proxy %s:%s for profile_id=%s", proxy_host, proxy_port, profile_id)
+        alive, proxy_error = _check_proxy_alive(
+            proxy_host, proxy_port, proxy_username, proxy_password,
+        )
+        if not alive:
+            log.error(
+                "Proxy dead for store_id=%s profile_id=%s (%s:%s): %s",
+                store_id, profile_id, proxy_host, proxy_port, proxy_error,
+            )
+            send_telegram_message(
+                settings.telegram_bot_token,
+                settings.telegram_chat_id,
+                (
+                    f"<b>Tool HMA TikTok Proxy Dead</b>\n"
+                    f"Store ID: {store_id}\n"
+                    f"Shop Code: {tt_shop_code}\n"
+                    f"Profile ID: {profile_id}\n"
+                    f"Profile Name: {profile_name}\n"
+                    f"Proxy: {proxy_host}:{proxy_port}\n"
+                    f"Error: {proxy_error}"
+                ),
+            )
+            time.sleep(PROXY_CHECK_DWELL_SECONDS)
+            return EXIT_PROXY_DEAD
+        log.info("Proxy alive — sleeping %ss", PROXY_CHECK_DWELL_SECONDS)
+        time.sleep(PROXY_CHECK_DWELL_SECONDS)
+
     try:
         start_resp = start_profile(
             session,
@@ -124,7 +180,7 @@ def _process_store(
                     f"Shop Code: {tt_shop_code}\n"
                     f"Profile ID: {profile_id}\n"
                     f"Profile Name: {profile_name}\n"
-                    f"Error: Proxy is dead — cannot reach TikTok seller page\n"
+                    f"Error: Cannot reach TikTok seller page\n"
                     f"Details: {exc}"
                 ),
             )
@@ -251,8 +307,8 @@ def main() -> int:
             settings.supover_api_key,
             settings.hma_http_timeout,
             settings.supover_api_key_header,
-            page=1,
-            limit=100,
+            page=2,
+            limit=36,
         )
     except requests.RequestException as exc:
         log.error("Supover endpoint unreachable: %s", exc)
@@ -269,12 +325,19 @@ def main() -> int:
     log.info("Found %d eligible store(s) to process.", len(pairs))
 
     worst_code = EXIT_OK
-    for i, (store_id, shop_code, region, profile_id, profile_name) in enumerate(pairs, 1):
+    for i, store in enumerate(pairs, 1):
         log.info(
             "--- Store %d/%d: store_id=%s shop_code=%s region=%s profile_id=%s profile_name=%s ---",
-            i, len(pairs), store_id, shop_code, region, profile_id, profile_name,
+            i, len(pairs), store.store_id, store.shop_code, store.region,
+            store.profile_id, store.profile_name,
         )
-        code = _process_store(session, settings, log, store_id, shop_code, region, profile_id, profile_name)
+        code = _process_store(
+            session, settings, log,
+            store.store_id, store.shop_code, store.region,
+            store.profile_id, store.profile_name,
+            store.proxy_host, store.proxy_port,
+            store.proxy_username, store.proxy_password,
+        )
         if code > worst_code:
             worst_code = code
         if code == EXIT_ELEMENT_READ:

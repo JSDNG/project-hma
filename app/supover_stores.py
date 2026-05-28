@@ -7,11 +7,25 @@ timeout. The module performs no environment access of its own.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 
 import requests
 
 from .helpers.http import build_api_headers, validate_api_credentials
+
+
+class EligibleStore(NamedTuple):
+    """A store row with its HMA profile + proxy info, validated and normalized."""
+
+    store_id: int
+    shop_code: str
+    region: str
+    profile_id: str
+    profile_name: str
+    proxy_host: str
+    proxy_port: int | None
+    proxy_username: str
+    proxy_password: str
 
 
 def push_store_status(
@@ -94,9 +108,9 @@ def fetch_dead_stores_with_balance(
 
 def all_store_and_profile_ids(
     stores: list[dict[str, Any]],
-) -> list[tuple[int, str, str, str, str]]:
-    """Return all ``(store_id, shop_code, region, profile_id, profile_name)`` tuples from eligible stores."""
-    results: list[tuple[int, str, str, str, str]] = []
+) -> list[EligibleStore]:
+    """Return one ``EligibleStore`` per row that has a valid HMA profile id."""
+    results: list[EligibleStore] = []
     for store in stores:
         profile_hma = store.get("profile_hma")
         if not isinstance(profile_hma, dict):
@@ -113,7 +127,27 @@ def all_store_and_profile_ids(
             continue
         region = store.get("region")
         region = region.strip().lower() if isinstance(region, str) and region.strip() else "us"
-        results.append((int(sid), shop_code.strip(), region, pid.strip(), str(pname).strip()))
+
+        proxy_raw = profile_hma.get("proxy")
+        proxy_host = proxy_raw.strip() if isinstance(proxy_raw, str) else ""
+        port_raw = profile_hma.get("port")
+        proxy_port = port_raw if isinstance(port_raw, int) and port_raw > 0 else None
+        proxy_username = profile_hma.get("username") or ""
+        proxy_password = profile_hma.get("password") or ""
+
+        results.append(
+            EligibleStore(
+                store_id=int(sid),
+                shop_code=shop_code.strip(),
+                region=region,
+                profile_id=pid.strip(),
+                profile_name=str(pname).strip(),
+                proxy_host=proxy_host,
+                proxy_port=proxy_port,
+                proxy_username=str(proxy_username),
+                proxy_password=str(proxy_password),
+            )
+        )
     return results
 
 
