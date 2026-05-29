@@ -69,6 +69,7 @@ EXIT_PROXY_DEAD = 7
 PROXY_TEST_URL = "https://api.ipify.org?format=json"
 PROXY_TEST_TIMEOUT = 60
 PROXY_CHECK_DWELL_SECONDS = 60
+SKIP_FIRST_STORES = 5
 
 
 def _check_proxy_alive(
@@ -123,7 +124,6 @@ def _process_store(
                 (
                     f"<b>Tool HMA TikTok Proxy Dead</b>\n"
                     f"Store Name: {store_name} ({tt_shop_code})\n"
-                    f"Shop Code: {tt_shop_code}\n"
                     f"Profile Name: {profile_name}\n"
                     f"Seller: {seller}\n"
                     f"Telegram: @{telegram}\n"
@@ -157,7 +157,6 @@ def _process_store(
             (
                 f"<b>Tool HMA TikTok Profile In Use</b>\n"
                 f"Store Name: {store_name} ({tt_shop_code})\n"
-                f"Shop Code: {tt_shop_code}\n"
                 f"Profile Name: {profile_name}\n"
                 f"Seller: {seller}\n"
                 f"Telegram: @{telegram}\n"
@@ -182,7 +181,6 @@ def _process_store(
                 (
                     f"<b>Tool HMA TikTok Playwright Error</b>\n"
                     f"Store Name: {store_name} ({tt_shop_code})\n"
-                    f"Shop Code: {tt_shop_code}\n"
                     f"Profile Name: {profile_name}\n"
                     f"Seller: {seller}\n"
                     f"Telegram: @{telegram}\n"
@@ -205,7 +203,6 @@ def _process_store(
                     (
                         f"<b>Tool HMA TikTok Not Logged In</b>\n"
                         f"Store Name: {store_name} ({tt_shop_code})\n"
-                        f"Shop Code: {tt_shop_code}\n"
                         f"Profile Name: {profile_name}\n"
                         f"Seller: {seller}\n"
                         f"Telegram: @{telegram}\n"
@@ -234,7 +231,6 @@ def _process_store(
                         (
                             f"<b>Tool HMA TikTok Element Read Error</b>\n"
                             f"Store Name: {store_name} ({tt_shop_code})\n"
-                            f"Shop Code: {tt_shop_code}\n"
                             f"Profile Name: {profile_name}\n"
                             f"Seller: {seller}\n"
                             f"Telegram: @{telegram}\n"
@@ -325,6 +321,7 @@ def main() -> int:
         log.error("Supover returned an invalid body: %s", exc)
         return EXIT_SUPOVER
 
+    stores = stores[SKIP_FIRST_STORES:]
     pairs = all_store_and_profile_ids(stores)
     if not pairs:
         log.error("No eligible store with a non-empty profile_hma.profile_id.")
