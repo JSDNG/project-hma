@@ -69,7 +69,6 @@ EXIT_PROXY_DEAD = 7
 PROXY_TEST_URL = "https://api.ipify.org?format=json"
 PROXY_TEST_TIMEOUT = 60
 PROXY_CHECK_DWELL_SECONDS = 60
-SKIP_FIRST_STORES = 5
 
 
 def _check_proxy_alive(
@@ -321,7 +320,6 @@ def main() -> int:
         log.error("Supover returned an invalid body: %s", exc)
         return EXIT_SUPOVER
 
-    stores = stores[SKIP_FIRST_STORES:]
     pairs = all_store_and_profile_ids(stores)
     if not pairs:
         log.error("No eligible store with a non-empty profile_hma.profile_id.")
