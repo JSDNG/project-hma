@@ -94,6 +94,7 @@ def _process_store(
     settings,
     log: logging.Logger,
     store_id: int,
+    store_name: str,
     tt_shop_code: str,
     region: str,
     profile_id: str,
@@ -121,9 +122,8 @@ def _process_store(
                 settings.telegram_chat_id,
                 (
                     f"<b>Tool HMA TikTok Proxy Dead</b>\n"
-                    f"Store ID: {store_id}\n"
+                    f"Store Name: {store_name} ({tt_shop_code})\n"
                     f"Shop Code: {tt_shop_code}\n"
-                    f"Profile ID: {profile_id}\n"
                     f"Profile Name: {profile_name}\n"
                     f"Seller: {seller}\n"
                     f"Telegram: @{telegram}\n"
@@ -156,9 +156,8 @@ def _process_store(
             settings.telegram_chat_id,
             (
                 f"<b>Tool HMA TikTok Profile In Use</b>\n"
-                f"Store ID: {store_id}\n"
+                f"Store Name: {store_name} ({tt_shop_code})\n"
                 f"Shop Code: {tt_shop_code}\n"
-                f"Profile ID: {profile_id}\n"
                 f"Profile Name: {profile_name}\n"
                 f"Seller: {seller}\n"
                 f"Telegram: @{telegram}\n"
@@ -182,9 +181,8 @@ def _process_store(
                 settings.telegram_chat_id,
                 (
                     f"<b>Tool HMA TikTok Playwright Error</b>\n"
-                    f"Store ID: {store_id}\n"
+                    f"Store Name: {store_name} ({tt_shop_code})\n"
                     f"Shop Code: {tt_shop_code}\n"
-                    f"Profile ID: {profile_id}\n"
                     f"Profile Name: {profile_name}\n"
                     f"Seller: {seller}\n"
                     f"Telegram: @{telegram}\n"
@@ -206,9 +204,8 @@ def _process_store(
                     settings.telegram_chat_id,
                     (
                         f"<b>Tool HMA TikTok Not Logged In</b>\n"
-                        f"Store ID: {store_id}\n"
+                        f"Store Name: {store_name} ({tt_shop_code})\n"
                         f"Shop Code: {tt_shop_code}\n"
-                        f"Profile ID: {profile_id}\n"
                         f"Profile Name: {profile_name}\n"
                         f"Seller: {seller}\n"
                         f"Telegram: @{telegram}\n"
@@ -236,9 +233,8 @@ def _process_store(
                         settings.telegram_chat_id,
                         (
                             f"<b>Tool HMA TikTok Element Read Error</b>\n"
-                            f"Store ID: {store_id}\n"
+                            f"Store Name: {store_name} ({tt_shop_code})\n"
                             f"Shop Code: {tt_shop_code}\n"
-                            f"Profile ID: {profile_id}\n"
                             f"Profile Name: {profile_name}\n"
                             f"Seller: {seller}\n"
                             f"Telegram: @{telegram}\n"
@@ -345,7 +341,7 @@ def main() -> int:
         )
         code = _process_store(
             session, settings, log,
-            store.store_id, store.shop_code, store.region,
+            store.store_id, store.store_name, store.shop_code, store.region,
             store.profile_id, store.profile_name,
             store.proxy_host, store.proxy_port,
             store.proxy_username, store.proxy_password,

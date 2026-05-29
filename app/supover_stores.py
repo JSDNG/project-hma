@@ -18,6 +18,7 @@ class EligibleStore(NamedTuple):
     """A store row with its HMA profile + proxy info, validated and normalized."""
 
     store_id: int
+    store_name: str
     shop_code: str
     region: str
     profile_id: str
@@ -137,12 +138,14 @@ def all_store_and_profile_ids(
         proxy_username = profile_hma.get("username") or ""
         proxy_password = profile_hma.get("password") or ""
 
+        store_name = store.get("domain") or ""
         seller = store.get("seller") or ""
         telegram = store.get("telegram") or ""
 
         results.append(
             EligibleStore(
                 store_id=int(sid),
+                store_name=str(store_name).strip(),
                 shop_code=shop_code.strip(),
                 region=region,
                 profile_id=pid.strip(),
