@@ -45,6 +45,7 @@ def push_store_status(
     payout_on_hold: str | None,
     bank_account_number: str | None,
     shop_status: str | None,
+    region: str,
 ) -> requests.Response:
     """POST extracted seller status to the Supover stores sync endpoint."""
     key, target = validate_api_credentials(api_key, url, "SUPOVER_STORES_SYNC_URL")
@@ -57,6 +58,7 @@ def push_store_status(
         "payout_on_hold": payout_on_hold,
         "bank_account_number": bank_account_number,
         "shop_status": shop_status,
+        "region": region,
     }
     return session.post(target, json=payload, headers=headers, timeout=timeout)
 

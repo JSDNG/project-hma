@@ -248,6 +248,7 @@ def _process_store(
                             store_id=store_id,
                             tt_shop_code=tt_shop_code,
                             profile_id=profile_id,
+                            region=region,
                             **status_data,
                         )
                         log.info(
