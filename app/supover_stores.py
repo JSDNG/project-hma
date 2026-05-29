@@ -131,9 +131,7 @@ def all_store_and_profile_ids(
         if not (isinstance(shop_code, str) and shop_code.strip()):
             continue
         region = store.get("region")
-        _REGION_MAP = {"GB": "uk"}
         region = region.strip() if isinstance(region, str) and region.strip() else "US"
-        region = _REGION_MAP.get(region, region)
 
         proxy_raw = profile_hma.get("proxy")
         proxy_host = proxy_raw.strip() if isinstance(proxy_raw, str) else ""
