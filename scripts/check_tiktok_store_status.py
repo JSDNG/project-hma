@@ -102,6 +102,8 @@ def _process_store(
     proxy_port: int | None,
     proxy_username: str,
     proxy_password: str,
+    seller: str,
+    telegram: str,
 ) -> int:
     """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
     if proxy_host:
@@ -123,6 +125,8 @@ def _process_store(
                     f"Shop Code: {tt_shop_code}\n"
                     f"Profile ID: {profile_id}\n"
                     f"Profile Name: {profile_name}\n"
+                    f"Seller: {seller}\n"
+                    f"Telegram: @{telegram}\n"
                     f"Proxy: {proxy_host}:{proxy_port}\n"
                     f"Error: {proxy_error}"
                 ),
@@ -156,6 +160,8 @@ def _process_store(
                 f"Shop Code: {tt_shop_code}\n"
                 f"Profile ID: {profile_id}\n"
                 f"Profile Name: {profile_name}\n"
+                f"Seller: {seller}\n"
+                f"Telegram: @{telegram}\n"
                 f"Error: Cannot open profile — seller is currently using it (HMA: {result.error})"
             ),
         )
@@ -180,6 +186,8 @@ def _process_store(
                     f"Shop Code: {tt_shop_code}\n"
                     f"Profile ID: {profile_id}\n"
                     f"Profile Name: {profile_name}\n"
+                    f"Seller: {seller}\n"
+                    f"Telegram: @{telegram}\n"
                     f"Error: Cannot reach TikTok seller page\n"
                     f"Details: {exc}"
                 ),
@@ -202,6 +210,8 @@ def _process_store(
                         f"Shop Code: {tt_shop_code}\n"
                         f"Profile ID: {profile_id}\n"
                         f"Profile Name: {profile_name}\n"
+                        f"Seller: {seller}\n"
+                        f"Telegram: @{telegram}\n"
                         f"Error: All billing elements missing — account may not be logged in"
                     ),
                 )
@@ -230,6 +240,8 @@ def _process_store(
                             f"Shop Code: {tt_shop_code}\n"
                             f"Profile ID: {profile_id}\n"
                             f"Profile Name: {profile_name}\n"
+                            f"Seller: {seller}\n"
+                            f"Telegram: @{telegram}\n"
                             f"Error: {error_detail}"
                         ),
                     )
@@ -337,6 +349,7 @@ def main() -> int:
             store.profile_id, store.profile_name,
             store.proxy_host, store.proxy_port,
             store.proxy_username, store.proxy_password,
+            store.seller, store.telegram,
         )
         if code > worst_code:
             worst_code = code

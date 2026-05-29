@@ -26,6 +26,8 @@ class EligibleStore(NamedTuple):
     proxy_port: int | None
     proxy_username: str
     proxy_password: str
+    seller: str
+    telegram: str
 
 
 def push_store_status(
@@ -135,6 +137,9 @@ def all_store_and_profile_ids(
         proxy_username = profile_hma.get("username") or ""
         proxy_password = profile_hma.get("password") or ""
 
+        seller = store.get("seller") or ""
+        telegram = store.get("telegram") or ""
+
         results.append(
             EligibleStore(
                 store_id=int(sid),
@@ -146,6 +151,8 @@ def all_store_and_profile_ids(
                 proxy_port=proxy_port,
                 proxy_username=str(proxy_username),
                 proxy_password=str(proxy_password),
+                seller=str(seller).strip(),
+                telegram=str(telegram).strip(),
             )
         )
     return results
