@@ -210,11 +210,15 @@ def _process_store(
                 )
                 exit_code = EXIT_NOT_LOGGED_IN
             else:
+                if status_data["bank_account_number"] is None:
+                    log.warning(
+                        "bank_account_number not found for store_id=%s shop_code=%s — continuing.",
+                        store_id, tt_shop_code,
+                    )
+
                 errors: list[str] = []
                 if status_data["pending_settlement"] == "0" and status_data["payout_on_hold"] == "0":
                     errors.append("pending_settlement and payout_on_hold both returned '0'")
-                if status_data["bank_account_number"] is None:
-                    errors.append("bank_account_number not found")
                 if status_data["shop_status"] is None:
                     errors.append("shop_status API returned no data")
 

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     xpath_pending_balance: str = ""
     xpath_on_hold: str = ""
     xpath_bank_account: str = ""
+    xpath_bank_account1: str = ""
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
