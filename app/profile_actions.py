@@ -109,7 +109,16 @@ def check_seller_status(
             }
 
         log.info("Account is logged in — current URL before bills: %s", current_url)
-        page.goto(seller_bills_url, wait_until="domcontentloaded")
+        try:
+            page.goto(seller_bills_url, wait_until="domcontentloaded")
+        except Exception:  # noqa: BLE001
+            # TikTok may interrupt navigation with a redirect (e.g. setup_fallback).
+            # Wait for whatever page landed and let element reads fail gracefully below.
+            log.warning("Bills page navigation interrupted; landed on %s", page.url)
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=timeout)
+            except Exception:  # noqa: BLE001
+                pass
 
         pending_found = False
         pending_settlement: str = "0"
