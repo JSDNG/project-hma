@@ -119,6 +119,47 @@ python -m scripts.check_tiktok_store_status
 
 Log file: `logs/check_tiktok_store_status.log`
 
+## Setup trên máy Windows mới
+
+Trước khi chạy script lần đầu trên một máy Windows mới, cần thực hiện đủ 3 bước sau. Thiếu bất kỳ bước nào đều có thể gây lỗi runtime.
+
+### Bước 1 — Cài Microsoft Visual C++ Redistributable
+
+Playwright sử dụng `sync_playwright` qua thư viện `greenlet` — một C extension cần MSVC runtime DLL (`vcruntime140.dll`, `msvcp140.dll`). Nếu chưa cài, script sẽ crash ngay khi import với lỗi:
+
+```
+DLL load failed while importing _greenlet: The specified module could not be found.
+```
+
+Cài bằng winget (khuyến nghị):
+
+```powershell
+winget install Microsoft.VCRedist.2015+.x64
+```
+
+Hoặc tải thủ công tại: `https://aka.ms/vs/17/release/vc_redist.x64.exe`, sau đó chạy:
+
+```powershell
+Invoke-WebRequest -Uri https://aka.ms/vs/17/release/vc_redist.x64.exe -OutFile vc_redist.x64.exe
+.\vc_redist.x64.exe /quiet /norestart
+```
+
+### Bước 2 — Cài Python dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+### Bước 3 — Cài Playwright browser binaries
+
+```powershell
+python -m playwright install chromium
+```
+
+> Bước 3 cài browser binary riêng biệt, không được bao gồm khi `pip install playwright`. Bỏ qua bước này, script sẽ lỗi khi cố kết nối CDP.
+
+---
+
 ## Lên lịch chạy tự động (Windows Task Scheduler)
 
 Script chạy **mỗi 2 ngày lúc 04:00** qua Windows Task Scheduler.
