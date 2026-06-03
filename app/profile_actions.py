@@ -152,15 +152,7 @@ def check_seller_status(
             bank_account_number = locator.text_content()
             bank_found = True
         except Exception:  # noqa: BLE001
-            log.warning("Failed to read bank_account_number element; trying fallback xpath.")
-            if settings.xpath_bank_account1:
-                try:
-                    locator = page.locator(f"xpath={settings.xpath_bank_account1}")
-                    locator.wait_for(state="visible", timeout=timeout)
-                    bank_account_number = locator.text_content()
-                    bank_found = True
-                except Exception:  # noqa: BLE001
-                    log.warning("Failed to read bank_account_number element (fallback).")
+            log.warning("Failed to read bank_account_number element.")
 
         time.sleep(delay)
 
