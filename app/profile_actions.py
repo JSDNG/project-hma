@@ -110,11 +110,11 @@ def check_seller_status(
 
         log.info("Account is logged in — current URL before bills: %s", current_url)
         try:
-            page.goto(seller_bills_url, wait_until="domcontentloaded")
+            page.goto(seller_bills_url, wait_until="load")
         except Exception:  # noqa: BLE001
             log.warning("Bills page navigation interrupted; retrying in 10s (landed on %s)", page.url)
             time.sleep(10)
-            page.goto(seller_bills_url, wait_until="domcontentloaded")
+            page.goto(seller_bills_url, wait_until="load")
 
         pending_found = False
         pending_settlement: str = "0"

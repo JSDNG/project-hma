@@ -326,6 +326,7 @@ def main() -> int:
         return EXIT_SUPOVER
 
     pairs = all_store_and_profile_ids(stores)
+    #pairs = pairs[11:]
     if not pairs:
         log.error("No eligible store with a non-empty profile_hma.profile_id.")
         return EXIT_SUPOVER
