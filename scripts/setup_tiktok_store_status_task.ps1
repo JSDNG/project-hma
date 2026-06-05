@@ -51,7 +51,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
     -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+    -ExecutionTimeLimit (New-TimeSpan -Hours 4)
 
 if ($RunWhetherLoggedOn) {
     $principal = New-ScheduledTaskPrincipal `
@@ -78,7 +78,7 @@ Write-Host "Registered scheduled task '$TaskName':"
 Write-Host "  Action            : $BatPath"
 Write-Host "  Working directory : $ProjectRoot"
 Write-Host "  Trigger           : every 2 days at 06:00"
-Write-Host "  Execution limit   : 15 minutes"
+Write-Host "  Execution limit   : 4 hours"
 Write-Host "  Logon mode        : $(if ($RunWhetherLoggedOn) { 'S4U (runs whether logged on or not)' } else { 'Interactive (runs only while logged on)' })"
 Write-Host ""
 Write-Host "Run once now to verify:"
