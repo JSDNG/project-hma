@@ -50,6 +50,7 @@ from app.hma_sync import (  # noqa: E402
 from app.helpers.telegram import send_telegram_message  # noqa: E402
 from app.profile_actions import check_seller_status  # noqa: E402
 from app.supover_stores import (  # noqa: E402
+    EligibleStore,
     all_store_and_profile_ids,
     fetch_dead_stores_with_balance,
     push_store_status,
@@ -69,6 +70,34 @@ EXIT_PROXY_DEAD = 7
 PROXY_TEST_URL = "https://api.ipify.org?format=json"
 PROXY_TEST_TIMEOUT = 60
 PROXY_CHECK_DWELL_SECONDS = 60
+
+
+def _notify_supover_error(
+    session: requests.Session,
+    settings,
+    log: logging.Logger,
+    store: EligibleStore,
+    error: str,
+) -> None:
+    try:
+        push_store_status(
+            session,
+            settings.supover_stores_sync_url,
+            settings.supover_api_key,
+            settings.hma_http_timeout,
+            settings.supover_api_key_header,
+            store_id=store.store_id,
+            tt_shop_code=store.shop_code,
+            profile_id=store.profile_id,
+            region=store.region,
+            pending_settlement=None,
+            payout_on_hold=None,
+            bank_account_number=None,
+            shop_status=None,
+            error=error,
+        )
+    except (requests.RequestException, ValueError) as exc:
+        log.error("Supover stores/sync failed (%s): %s", error, exc)
 
 
 def _check_proxy_alive(
@@ -93,49 +122,20 @@ def _process_store(
     session: requests.Session,
     settings,
     log: logging.Logger,
-    store_id: int,
-    store_name: str,
-    tt_shop_code: str,
-    region: str,
-    profile_id: str,
-    profile_name: str,
-    proxy_host: str,
-    proxy_port: int | None,
-    proxy_username: str,
-    proxy_password: str,
-    seller: str,
-    telegram: str,
+    store: EligibleStore,
 ) -> int:
     """Start profile, check status, push to Supover, dwell, stop. Return exit code."""
-    if proxy_host:
-        log.info("Testing proxy %s:%s for profile_id=%s", proxy_host, proxy_port, profile_id)
+    if store.proxy_host:
+        log.info("Testing proxy %s:%s for profile_id=%s", store.proxy_host, store.proxy_port, store.profile_id)
         alive, proxy_error = _check_proxy_alive(
-            proxy_host, proxy_port, proxy_username, proxy_password,
+            store.proxy_host, store.proxy_port, store.proxy_username, store.proxy_password,
         )
         if not alive:
             log.error(
                 "Proxy dead for store_id=%s profile_id=%s (%s:%s): %s",
-                store_id, profile_id, proxy_host, proxy_port, proxy_error,
+                store.store_id, store.profile_id, store.proxy_host, store.proxy_port, proxy_error,
             )
-            try:
-                push_store_status(
-                    session,
-                    settings.supover_stores_sync_url,
-                    settings.supover_api_key,
-                    settings.hma_http_timeout,
-                    settings.supover_api_key_header,
-                    store_id=store_id,
-                    tt_shop_code=tt_shop_code,
-                    profile_id=profile_id,
-                    region=region,
-                    pending_settlement=None,
-                    payout_on_hold=None,
-                    bank_account_number=None,
-                    shop_status=None,
-                    error=f"Proxy dead [{proxy_host}:{proxy_port}]",
-                )
-            except (requests.RequestException, ValueError) as exc:
-                log.error("Supover stores/sync failed (proxy dead notify): %s", exc)
+            _notify_supover_error(session, settings, log, store, f"Proxy dead [{store.proxy_host}:{store.proxy_port}]")
             time.sleep(PROXY_CHECK_DWELL_SECONDS)
             return EXIT_PROXY_DEAD
         log.info("Proxy alive — sleeping %ss", PROXY_CHECK_DWELL_SECONDS)
@@ -145,7 +145,7 @@ def _process_store(
         start_resp = start_profile(
             session,
             settings.hma_local_api_base,
-            profile_id,
+            store.profile_id,
             settings.hma_http_timeout,
             settings.hma_profiles_path,
         )
@@ -156,34 +156,16 @@ def _process_store(
     result = interpret_start_response(start_resp, settings.hma_start_success_code)
     if not result.ok:
         log.error("HMA /profiles/start failed: %s", result.error)
-        try:
-            push_store_status(
-                session,
-                settings.supover_stores_sync_url,
-                settings.supover_api_key,
-                settings.hma_http_timeout,
-                settings.supover_api_key_header,
-                store_id=store_id,
-                tt_shop_code=tt_shop_code,
-                profile_id=profile_id,
-                region=region,
-                pending_settlement=None,
-                payout_on_hold=None,
-                bank_account_number=None,
-                shop_status=None,
-                error="HMA profile in use",
-            )
-        except (requests.RequestException, ValueError) as exc:
-            log.error("Supover stores/sync failed (profile-in-use notify): %s", exc)
+        _notify_supover_error(session, settings, log, store, "HMA profile in use")
         send_telegram_message(
             settings.telegram_bot_token,
             settings.telegram_chat_id,
             (
                 f"<b>Tool HMA TikTok Profile In Use</b>\n"
-                f"Store Name: {store_name} ({tt_shop_code})\n"
-                f"Profile Name: {profile_name}\n"
-                f"Seller: {seller}\n"
-                f"Telegram: @{telegram}\n"
+                f"Store Name: {store.store_name} ({store.shop_code})\n"
+                f"Profile Name: {store.profile_name}\n"
+                f"Seller: {store.seller}\n"
+                f"Telegram: @{store.telegram}\n"
                 f"Error: Cannot open profile — seller is currently using it (HMA: {result.error})"
             ),
         )
@@ -194,119 +176,63 @@ def _process_store(
     exit_code = EXIT_OK
     try:
         try:
-            status_data = check_seller_status(result.ws_url, log, settings, region)
+            status = check_seller_status(result.ws_url, log, settings, store.region)
         except KeyboardInterrupt:
             log.info("Interrupted by user; stopping profile early.")
         except Exception as exc:  # noqa: BLE001
             log.error("Playwright error: %s", exc)
-            try:
-                push_store_status(
-                    session,
-                    settings.supover_stores_sync_url,
-                    settings.supover_api_key,
-                    settings.hma_http_timeout,
-                    settings.supover_api_key_header,
-                    store_id=store_id,
-                    tt_shop_code=tt_shop_code,
-                    profile_id=profile_id,
-                    region=region,
-                    pending_settlement=None,
-                    payout_on_hold=None,
-                    bank_account_number=None,
-                    shop_status=None,
-                    error="Playwright error — cannot reach TikTok seller page",
-                )
-            except (requests.RequestException, ValueError) as sync_exc:
-                log.error("Supover stores/sync failed (playwright notify): %s", sync_exc)
+            _notify_supover_error(session, settings, log, store, "Playwright error — cannot reach TikTok seller page")
             send_telegram_message(
                 settings.telegram_bot_token,
                 settings.telegram_chat_id,
                 (
                     f"<b>Tool HMA TikTok Playwright Error</b>\n"
-                    f"Store Name: {store_name} ({tt_shop_code})\n"
-                    f"Profile Name: {profile_name}\n"
-                    f"Seller: {seller}\n"
-                    f"Telegram: @{telegram}\n"
+                    f"Store Name: {store.store_name} ({store.shop_code})\n"
+                    f"Profile Name: {store.profile_name}\n"
+                    f"Seller: {store.seller}\n"
+                    f"Telegram: @{store.telegram}\n"
                     f"Error: Cannot reach TikTok seller page\n"
                     f"Details: {exc}"
                 ),
             )
             exit_code = EXIT_PLAYWRIGHT
         else:
-            all_elements_missing = status_data.pop("all_elements_missing", False)
-
-            if all_elements_missing:
+            if status.all_elements_missing:
                 log.warning(
                     "All elements missing (likely not logged in) for store_id=%s shop_code=%s profile_id=%s",
-                    store_id, tt_shop_code, profile_id,
+                    store.store_id, store.shop_code, store.profile_id,
                 )
-                try:
-                    push_store_status(
-                        session,
-                        settings.supover_stores_sync_url,
-                        settings.supover_api_key,
-                        settings.hma_http_timeout,
-                        settings.supover_api_key_header,
-                        store_id=store_id,
-                        tt_shop_code=tt_shop_code,
-                        profile_id=profile_id,
-                        region=region,
-                        pending_settlement=None,
-                        payout_on_hold=None,
-                        bank_account_number=None,
-                        shop_status=None,
-                        error="TikTok not logged in — all billing elements missing",
-                    )
-                except (requests.RequestException, ValueError) as exc:
-                    log.error("Supover stores/sync failed (not-logged-in notify): %s", exc)
+                _notify_supover_error(session, settings, log, store, "TikTok not logged in — all billing elements missing")
                 exit_code = EXIT_NOT_LOGGED_IN
             else:
-                if status_data["bank_account_number"] is None:
+                if status.bank_account_number is None:
                     log.warning(
                         "bank_account_number not found for store_id=%s shop_code=%s — continuing.",
-                        store_id, tt_shop_code,
+                        store.store_id, store.shop_code,
                     )
 
                 errors: list[str] = []
-                if status_data["pending_settlement"] == "0" and status_data["payout_on_hold"] == "0":
+                if status.pending_settlement == "0" and status.payout_on_hold == "0":
                     errors.append("pending_settlement and payout_on_hold both returned '0'")
-                if status_data["shop_status"] is None:
+                if status.shop_status is None:
                     errors.append("shop_status API returned no data")
 
                 if errors:
                     error_detail = "; ".join(errors)
                     log.error(
                         "Element read error for store_id=%s shop_code=%s profile_id=%s: %s",
-                        store_id, tt_shop_code, profile_id, error_detail,
+                        store.store_id, store.shop_code, store.profile_id, error_detail,
                     )
-                    try:
-                        push_store_status(
-                            session,
-                            settings.supover_stores_sync_url,
-                            settings.supover_api_key,
-                            settings.hma_http_timeout,
-                            settings.supover_api_key_header,
-                            store_id=store_id,
-                            tt_shop_code=tt_shop_code,
-                            profile_id=profile_id,
-                            region=region,
-                            pending_settlement=None,
-                            payout_on_hold=None,
-                            bank_account_number=None,
-                            shop_status=None,
-                            error="Tool hma read error",
-                        )
-                    except (requests.RequestException, ValueError) as exc:
-                        log.error("Supover stores/sync failed (element-read notify): %s", exc)
+                    _notify_supover_error(session, settings, log, store, "Tool hma read error")
                     send_telegram_message(
                         settings.telegram_bot_token,
                         settings.telegram_chat_id,
                         (
                             f"<b>Tool HMA TikTok Element Read Error</b>\n"
-                            f"Store Name: {store_name} ({tt_shop_code})\n"
-                            f"Profile Name: {profile_name}\n"
-                            f"Seller: {seller}\n"
-                            f"Telegram: @{telegram}\n"
+                            f"Store Name: {store.store_name} ({store.shop_code})\n"
+                            f"Profile Name: {store.profile_name}\n"
+                            f"Seller: {store.seller}\n"
+                            f"Telegram: @{store.telegram}\n"
                             f"Error: {error_detail}"
                         ),
                     )
@@ -319,11 +245,14 @@ def _process_store(
                             settings.supover_api_key,
                             settings.hma_http_timeout,
                             settings.supover_api_key_header,
-                            store_id=store_id,
-                            tt_shop_code=tt_shop_code,
-                            profile_id=profile_id,
-                            region=region,
-                            **status_data,
+                            store_id=store.store_id,
+                            tt_shop_code=store.shop_code,
+                            profile_id=store.profile_id,
+                            region=store.region,
+                            pending_settlement=status.pending_settlement,
+                            payout_on_hold=status.payout_on_hold,
+                            bank_account_number=status.bank_account_number,
+                            shop_status=status.shop_status,
                         )
                         log.info(
                             "Supover stores/sync responded HTTP %s: %s",
@@ -348,7 +277,7 @@ def _process_store(
             stop_resp = stop_profile(
                 session,
                 settings.hma_local_api_base,
-                profile_id,
+                store.profile_id,
                 settings.hma_http_timeout,
                 settings.hma_profiles_path,
             )
@@ -396,7 +325,6 @@ def main() -> int:
         return EXIT_SUPOVER
 
     pairs = all_store_and_profile_ids(stores)
-    #pairs = pairs[6:]
     if not pairs:
         log.error("No eligible store with a non-empty profile_hma.profile_id.")
         return EXIT_SUPOVER
@@ -410,14 +338,7 @@ def main() -> int:
             i, len(pairs), store.store_id, store.shop_code, store.region,
             store.profile_id, store.profile_name,
         )
-        code = _process_store(
-            session, settings, log,
-            store.store_id, store.store_name, store.shop_code, store.region,
-            store.profile_id, store.profile_name,
-            store.proxy_host, store.proxy_port,
-            store.proxy_username, store.proxy_password,
-            store.seller, store.telegram,
-        )
+        code = _process_store(session, settings, log, store)
         if code > worst_code:
             worst_code = code
         if code == EXIT_ELEMENT_READ:
