@@ -132,7 +132,7 @@ def _process_store(
                     payout_on_hold=None,
                     bank_account_number=None,
                     shop_status=None,
-                    error=f"Proxy dead [{proxy_host}:{proxy_port}]",
+                    error="Proxy dead",
                 )
             except (requests.RequestException, ValueError) as exc:
                 log.error("Supover stores/sync failed (proxy dead notify): %s", exc)
@@ -199,25 +199,6 @@ def _process_store(
             log.info("Interrupted by user; stopping profile early.")
         except Exception as exc:  # noqa: BLE001
             log.error("Playwright error: %s", exc)
-            try:
-                push_store_status(
-                    session,
-                    settings.supover_stores_sync_url,
-                    settings.supover_api_key,
-                    settings.hma_http_timeout,
-                    settings.supover_api_key_header,
-                    store_id=store_id,
-                    tt_shop_code=tt_shop_code,
-                    profile_id=profile_id,
-                    region=region,
-                    pending_settlement=None,
-                    payout_on_hold=None,
-                    bank_account_number=None,
-                    shop_status=None,
-                    error="Playwright error — cannot reach TikTok seller page",
-                )
-            except (requests.RequestException, ValueError) as sync_exc:
-                log.error("Supover stores/sync failed (playwright notify): %s", sync_exc)
             send_telegram_message(
                 settings.telegram_bot_token,
                 settings.telegram_chat_id,
@@ -255,7 +236,7 @@ def _process_store(
                         payout_on_hold=None,
                         bank_account_number=None,
                         shop_status=None,
-                        error="TikTok not logged in — all billing elements missing",
+                        error="TikTok not logged in",
                     )
                 except (requests.RequestException, ValueError) as exc:
                     log.error("Supover stores/sync failed (not-logged-in notify): %s", exc)
@@ -279,25 +260,6 @@ def _process_store(
                         "Element read error for store_id=%s shop_code=%s profile_id=%s: %s",
                         store_id, tt_shop_code, profile_id, error_detail,
                     )
-                    try:
-                        push_store_status(
-                            session,
-                            settings.supover_stores_sync_url,
-                            settings.supover_api_key,
-                            settings.hma_http_timeout,
-                            settings.supover_api_key_header,
-                            store_id=store_id,
-                            tt_shop_code=tt_shop_code,
-                            profile_id=profile_id,
-                            region=region,
-                            pending_settlement=None,
-                            payout_on_hold=None,
-                            bank_account_number=None,
-                            shop_status=None,
-                            error="Tool hma read error",
-                        )
-                    except (requests.RequestException, ValueError) as exc:
-                        log.error("Supover stores/sync failed (element-read notify): %s", exc)
                     send_telegram_message(
                         settings.telegram_bot_token,
                         settings.telegram_chat_id,

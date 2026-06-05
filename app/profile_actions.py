@@ -67,7 +67,12 @@ def check_seller_status(
         page = context.new_page()
 
         # TikTok keeps background requests open — networkidle often never fires.
-        page.goto(seller_login_url, wait_until="load", timeout=timeout)
+        try:
+            page.goto(seller_login_url, wait_until="load", timeout=timeout)
+        except Exception:  # noqa: BLE001
+            log.warning("Login page navigation interrupted; retrying in 10s (landed on %s)", page.url)
+            time.sleep(10)
+            page.goto(seller_login_url, wait_until="load", timeout=timeout)
         login_wait = settings.tiktok_login_wait_seconds
         log.info(
             "Login page loaded; waiting %s s before checking for homepage redirect",
@@ -77,26 +82,42 @@ def check_seller_status(
 
         # TikTok can redirect/reload several times after login. Observe URL transitions
         # for up to `timeout` and treat it as logged-in as soon as homepage appears.
-        redirect_deadline = time.monotonic() + (timeout / 1000)
-        current_url = page.url
-        last_url = current_url
-        saw_homepage = "homepage" in current_url
-
-        while time.monotonic() < redirect_deadline and not saw_homepage:
-            try:
-                page.wait_for_load_state("load", timeout=1000)
-            except Exception:  # noqa: BLE001
-                pass
-
+        # Retries once if homepage redirect is not seen within the deadline.
+        saw_homepage = False
+        current_url = ""
+        for attempt in range(2):
+            redirect_deadline = time.monotonic() + (timeout / 1000)
             current_url = page.url
-            if current_url != last_url:
-                log.info("Observed login redirect URL: %s", current_url)
-                last_url = current_url
+            last_url = current_url
             saw_homepage = "homepage" in current_url
+
+            while time.monotonic() < redirect_deadline and not saw_homepage:
+                try:
+                    page.wait_for_load_state("load", timeout=1000)
+                except Exception:  # noqa: BLE001
+                    pass
+
+                current_url = page.url
+                if current_url != last_url:
+                    log.info("Observed login redirect URL: %s", current_url)
+                    last_url = current_url
+                saw_homepage = "homepage" in current_url
+                if saw_homepage:
+                    break
+
+                time.sleep(0.5)
+
             if saw_homepage:
                 break
-
-            time.sleep(0.5)
+            if attempt == 0:
+                log.warning(
+                    "Homepage redirect not seen; retrying login navigation (current URL: %s)", current_url,
+                )
+                try:
+                    page.goto(seller_login_url, wait_until="load", timeout=timeout)
+                except Exception:  # noqa: BLE001
+                    log.warning("Login retry navigation interrupted (landed on %s)", page.url)
+                time.sleep(login_wait)
 
         if not saw_homepage and "/account/login" in current_url:
             log.warning("Account not logged in — current URL: %s", current_url)
