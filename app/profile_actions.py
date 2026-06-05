@@ -138,30 +138,56 @@ def check_seller_status(
             page.goto(seller_bills_url, wait_until="load")
 
         pending_found = False
-        pending_settlement: str = "0"
-        try:
-            locator = page.locator(f"xpath={settings.xpath_pending_balance}")
-            locator.wait_for(state="visible", timeout=timeout)
-            text = locator.text_content()
-            if text:
-                pending_settlement = text.replace("$", "").replace(",", "")
-            pending_found = True
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to read pending_settlement element.")
+        pending_settlement: str | None = None
+        for attempt in range(2):
+            try:
+                label_locator = page.locator(f"xpath={settings.xpath_label_pending_balance}")
+                label_locator.wait_for(state="visible", timeout=timeout)
+                label_text = (label_locator.text_content() or "").strip()
+                if label_text != "Net earnings":
+                    log.warning("XPATH_LABEL_PENDING_BALANCE is %r, expected 'Net earnings' (attempt %d)", label_text, attempt + 1)
+                    if attempt == 0:
+                        time.sleep(10)
+                        continue
+                    break
+                value_locator = page.locator(f"xpath={settings.xpath_pending_balance}")
+                value_locator.wait_for(state="visible", timeout=timeout)
+                text = value_locator.text_content()
+                if text:
+                    pending_settlement = text.replace("$", "").replace(",", "")
+                pending_found = True
+                break
+            except Exception:  # noqa: BLE001
+                log.warning("Failed to read pending_settlement element (attempt %d).", attempt + 1)
+                if attempt == 0:
+                    time.sleep(10)
 
         time.sleep(delay)
 
         payout_found = False
-        payout_on_hold: str = "0"
-        try:
-            locator = page.locator(f"xpath={settings.xpath_on_hold}")
-            locator.wait_for(state="visible", timeout=timeout)
-            text = locator.text_content()
-            if text:
-                payout_on_hold = text.replace("$", "").replace(",", "")
-            payout_found = True
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to read payout_on_hold element.")
+        payout_on_hold: str | None = None
+        for attempt in range(2):
+            try:
+                label_locator = page.locator(f"xpath={settings.xpath_label_on_hold}")
+                label_locator.wait_for(state="visible", timeout=timeout)
+                label_text = (label_locator.text_content() or "").strip()
+                if label_text != "On hold":
+                    log.warning("XPATH_LABEL_ON_HOLD is %r, expected 'On hold' (attempt %d)", label_text, attempt + 1)
+                    if attempt == 0:
+                        time.sleep(10)
+                        continue
+                    break
+                value_locator = page.locator(f"xpath={settings.xpath_on_hold}")
+                value_locator.wait_for(state="visible", timeout=timeout)
+                text = value_locator.text_content()
+                if text:
+                    payout_on_hold = text.replace("$", "").replace(",", "")
+                payout_found = True
+                break
+            except Exception:  # noqa: BLE001
+                log.warning("Failed to read payout_on_hold element (attempt %d).", attempt + 1)
+                if attempt == 0:
+                    time.sleep(10)
 
         time.sleep(delay)
 

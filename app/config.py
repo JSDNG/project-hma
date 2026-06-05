@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     tiktok_login_wait_seconds: int = 15
     tiktok_step_delay: int = 5
     tiktok_dwell_seconds: int = 300
+    xpath_label_pending_balance: str = ""
     xpath_pending_balance: str = ""
+    xpath_label_on_hold: str = ""
     xpath_on_hold: str = ""
     xpath_bank_account: str = ""
 
