@@ -44,7 +44,7 @@ $action = New-ScheduledTaskAction `
     -Execute $BatPath `
     -WorkingDirectory $ProjectRoot
 
-$trigger = New-ScheduledTaskTrigger -Daily -DaysInterval 2 -At 04:00
+$trigger = New-ScheduledTaskTrigger -Daily -DaysInterval 2 -At 06:00
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -67,7 +67,7 @@ if ($RunWhetherLoggedOn) {
 
 Register-ScheduledTask `
     -TaskName    $TaskName `
-    -Description "Check TikTok store status (pending balance, on-hold, bank account, account status) every 2 days at 04:00." `
+    -Description "Check TikTok store status (pending balance, on-hold, bank account, account status) every 2 days at 06:00." `
     -Action      $action `
     -Trigger     $trigger `
     -Settings    $settings `
@@ -77,7 +77,7 @@ Register-ScheduledTask `
 Write-Host "Registered scheduled task '$TaskName':"
 Write-Host "  Action            : $BatPath"
 Write-Host "  Working directory : $ProjectRoot"
-Write-Host "  Trigger           : every 2 days at 04:00"
+Write-Host "  Trigger           : every 2 days at 06:00"
 Write-Host "  Execution limit   : 15 minutes"
 Write-Host "  Logon mode        : $(if ($RunWhetherLoggedOn) { 'S4U (runs whether logged on or not)' } else { 'Interactive (runs only while logged on)' })"
 Write-Host ""

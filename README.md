@@ -14,7 +14,7 @@ on a schedule via Windows Task Scheduler.
    (daily at 00:00 & 12:00).
 2. **TikTok Store Status Check** — opens HMA browser profiles, scrapes
    TikTok Seller billing data, and pushes results to Supover (every 2 days
-   at 04:00). Sends Telegram alerts on failures.
+   at 06:00). Sends Telegram alerts on failures.
 
 ---
 
@@ -117,7 +117,7 @@ status, scrapes billing data, pushes to Supover.
 python -m scripts.check_tiktok_store_status
 ```
 
-**Schedule:** Every 2 days at 04:00.
+**Schedule:** Every 2 days at 06:00.
 
 **Setup (Windows Task Scheduler):**
 

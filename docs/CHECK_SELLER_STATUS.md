@@ -162,7 +162,7 @@ python -m playwright install chromium
 
 ## Lên lịch chạy tự động (Windows Task Scheduler)
 
-Script chạy **mỗi 2 ngày lúc 04:00** qua Windows Task Scheduler.
+Script chạy **mỗi 2 ngày lúc 06:00** qua Windows Task Scheduler.
 
 ### Setup
 
