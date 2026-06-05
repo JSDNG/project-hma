@@ -12,7 +12,7 @@ Proxy alive check ──► HMA /profiles/start ──► Login page ──► C
 
 - Trước khi gọi HMA `/profiles/start`, script GET `https://api.ipify.org?format=json` qua proxy `(host:port[, user:pass])` lấy từ `profile_hma`.
 - Sống (HTTP 2xx) → log + sleep `PROXY_CHECK_DWELL_SECONDS` giây → tiếp tục mở profile.
-- Chết (timeout / 4xx / 5xx / không kết nối được) → gửi Telegram **"Proxy Dead"** kèm `proxy host:port` và lý do raw → sleep `PROXY_CHECK_DWELL_SECONDS` → exit code `7`, skip store, tiếp tục store kế tiếp.
+- Chết (timeout / 4xx / 5xx / không kết nối được) → push lên Supover với `error="Proxy dead [host:port]"` → sleep `PROXY_CHECK_DWELL_SECONDS` → exit code `7`, skip store, tiếp tục store kế tiếp. *(không gửi Telegram)*
 - Profile không có proxy → skip step này, đi thẳng tới `/profiles/start`.
 
 ### Bước 1 — HMA `/profiles/start`
@@ -22,11 +22,12 @@ Proxy alive check ──► HMA /profiles/start ──► Login page ──► C
 ### Bước 2 — Login Check
 
 - URL: `TIKTOK_SELLER_LOGIN_URL` (có `{region}` placeholder)
-- `region == "gb"` → đổi thẳng sang `"uk"` cho cả login + bills + shop_info (không thử `gb` trước).
-- Chờ trang load hoàn toàn (`load` + `networkidle`) + `TIKTOK_STEP_DELAY` giây
+- `region == "GB"` → đổi thẳng sang `"uk"` cho cả login + bills + shop_info (không thử `gb` trước).
+- `page.goto(login_url, wait_until="load")` + sleep `TIKTOK_LOGIN_WAIT_SECONDS` giây.
 - Nếu URL chứa `homepage` → đã đăng nhập → tiếp tục bước kế.
-- Nếu URL không chứa `homepage` → chưa đăng nhập → gửi Telegram **"Not Logged In"**, skip store, chuyển store kế tiếp.
-- Nếu `page.goto` raise exception (mạng, profile crash, …) → gửi Telegram **"Playwright Error"** kèm raw exception → exit code `4`, stop profile, tiếp tục store kế tiếp.
+- Nếu chưa thấy `homepage`: gọi `page.wait_for_url("**/homepage**", timeout=TIKTOK_ELEMENT_TIMEOUT)` — chờ TikTok redirect.
+- Nếu hết timeout vẫn không thấy `homepage` và URL chứa `/account/login` → push lên Supover với `error="TikTok not logged in"` → exit code `6`, skip store, tiếp tục store kế tiếp. *(không gửi Telegram)*
+- Nếu `check_seller_status` raise exception (mạng, profile crash, …) → push lên Supover với `error="Playwright error"` + gửi Telegram **"Playwright Error"** kèm raw exception → exit code `4`, stop profile, tiếp tục store kế tiếp.
 
 ### Bước 3 — Pending Balance (trang Bills)
 
@@ -60,33 +61,32 @@ Proxy alive check ──► HMA /profiles/start ──► Login page ──► C
 
 ### Bước 7 — Validate & POST Supover
 
-Trước khi POST, script validate kết quả:
+Trước khi POST data, script validate kết quả từ `SellerStatus`:
 
-| Điều kiện | Ý nghĩa |
-|---|---|
-| Cả 3 element đều không tìm thấy | Có thể chưa đăng nhập (all_elements_missing) |
-| `pending_settlement == "0"` **AND** `payout_on_hold == "0"` | Element read lỗi (cả 2 default) |
-| `bank_account_number is None` | Element read lỗi |
-| `shop_status is None` | API call lỗi hoặc không có data |
+| Điều kiện | Ý nghĩa | Hành động |
+|---|---|---|
+| Cả 3 element đều không tìm thấy (`all_elements_missing`) | Có thể chưa đăng nhập | Push Supover `error=`, exit `6`, tiếp tục |
+| `pending_settlement == "0"` **AND** `payout_on_hold == "0"` | Element read lỗi | Push Supover `error=` + Telegram, exit `5`, dừng toàn bộ |
+| `shop_status is None` | Shop info API lỗi | Push Supover `error=` + Telegram, exit `5`, dừng toàn bộ |
+| `bank_account_number is None` | Không tìm thấy bank account | Log warning, **tiếp tục** (không dừng) |
 
-Nếu all_elements_missing:
+Nếu `all_elements_missing`:
 - Log warning
-- Gửi thông báo **Telegram** — "Not Logged In"
-- **KHÔNG push data** lên Supover
+- Push lên Supover với `error="TikTok not logged in — all billing elements missing"` *(không gửi Telegram)*
 - Exit code = `6` (`EXIT_NOT_LOGGED_IN`) — **tiếp tục store kế tiếp**
 
-Nếu có lỗi element read (nhưng không phải all missing):
+Nếu có lỗi element read (`pending+hold == "0"` hoặc `shop_status is None`):
 - Log error chi tiết
+- Push lên Supover với `error="Tool hma read error"`
 - Gửi thông báo **Telegram** — "Element Read Error"
-- **KHÔNG push data** lên Supover
 - Exit code = `5` (`EXIT_ELEMENT_READ`) — **dừng toàn bộ**
 
 Nếu validate OK:
-- POST tới `SUPOVER_STORES_SYNC_URL` với `store_id`, `tt_shop_code`, `profile_id`, và 4 field trên
+- POST tới `SUPOVER_STORES_SYNC_URL` với `store_id`, `tt_shop_code`, `profile_id`, `region` và 4 field data
 
 ### Bước 8 — Dwell
 
-- Giữ browser mở `TIKTOK_DWELL_SECONDS` giây trước khi stop profile (luôn chạy dù validate fail)
+- Giữ browser mở `TIKTOK_DWELL_SECONDS` giây — **chỉ chạy khi exit_code = 0** (validate OK). Nếu store kết thúc với lỗi, dwell bị bỏ qua.
 
 ## Exit codes
 
@@ -105,10 +105,10 @@ Nếu validate OK:
 
 | File | Vai trò |
 |---|---|
-| `app/profile_actions.py` | Hàm `check_seller_status` — login check, đọc element, gọi API |
-| `app/supover_stores.py` | Hàm `push_store_status` POST về Supover |
-| `app/helpers/telegram.py` | Hàm `send_telegram_message` gửi thông báo lỗi |
-| `scripts/check_tiktok_store_status.py` | Script orchestration (loop qua stores, validate, notify) |
+| `app/profile_actions.py` | `SellerStatus` dataclass; `check_seller_status` — login check, đọc element (`_read_xpath`), gọi API |
+| `app/supover_stores.py` | `push_store_status` POST về Supover; `EligibleStore` NamedTuple |
+| `app/helpers/telegram.py` | `send_telegram_message` gửi thông báo lỗi |
+| `scripts/check_tiktok_store_status.py` | Script orchestration; `_notify_supover_error` — push error về Supover cho mọi error path; `_process_store` — xử lý từng store |
 | `.env` | Tất cả URL, XPath, timeout, delay, Telegram credentials |
 
 ## Chạy
@@ -118,6 +118,16 @@ python -m scripts.check_tiktok_store_status
 ```
 
 Log file: `logs/check_tiktok_store_status.log`
+
+### Test một phần danh sách
+
+Để skip N store đầu (ví dụ bỏ qua 6 store đầu và chỉ chạy từ store thứ 7), tạm thời thêm vào `main()` trong `scripts/check_tiktok_store_status.py` sau dòng `pairs = all_store_and_profile_ids(stores)`:
+
+```python
+pairs = pairs[6:]  # skip 6 store đầu khi test — xóa sau khi xong
+```
+
+Xóa dòng này sau khi test xong.
 
 ## Setup trên máy Windows mới
 
@@ -214,7 +224,7 @@ TELEGRAM_CHAT_ID=...
 | Hằng số | Mặc định | Ý nghĩa |
 |---|---|---|
 | `PROXY_TEST_URL` | `https://api.ipify.org?format=json` | Trang dùng để test proxy |
-| `PROXY_TEST_TIMEOUT` | `30` (giây) | Timeout cho request test proxy |
-| `PROXY_CHECK_DWELL_SECONDS` | `30` (giây) | Delay sau mỗi lần check proxy (cả alive và dead) |
+| `PROXY_TEST_TIMEOUT` | `60` (giây) | Timeout cho request test proxy |
+| `PROXY_CHECK_DWELL_SECONDS` | `60` (giây) | Delay sau mỗi lần check proxy (cả alive và dead) |
 
 Khi TikTok thay đổi layout, chỉ cần sửa XPath trong `.env`.

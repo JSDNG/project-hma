@@ -17,12 +17,35 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
-    from playwright.sync_api import BrowserContext
+    from playwright.sync_api import BrowserContext, Page
 
     from .config import Settings
+
+
+@dataclass(frozen=True)
+class SellerStatus:
+    pending_settlement: str
+    payout_on_hold: str
+    bank_account_number: str | None
+    shop_status: str | None
+    all_elements_missing: bool
+
+
+def _read_xpath(
+    page: "Page", xpath: str, timeout: int, log: logging.Logger, field_name: str,
+) -> tuple[str | None, bool]:
+    """Return (text_content, found). found=False when element not visible within timeout."""
+    try:
+        locator = page.locator(f"xpath={xpath}")
+        locator.wait_for(state="visible", timeout=timeout)
+        return locator.text_content(), True
+    except Exception:  # noqa: BLE001
+        log.warning("Failed to read %s element.", field_name)
+        return None, False
 
 
 @contextmanager
@@ -47,12 +70,8 @@ def _attach_to_profile(ws_url: str) -> Iterator["BrowserContext"]:
 
 def check_seller_status(
     ws_url: str, log: logging.Logger, settings: "Settings", region: str = "us",
-) -> dict[str, str | None]:
-    """Extract pending settlement, payout on hold, bank account number, and shop status.
-
-    Returns a dict with keys: pending_settlement, payout_on_hold, bank_account_number,
-    shop_status. Values are ``None`` when the element was not found.
-    """
+) -> SellerStatus:
+    """Extract pending settlement, payout on hold, bank account number, and shop status."""
     timeout = settings.tiktok_element_timeout
     delay = settings.tiktok_step_delay
 
@@ -75,38 +94,25 @@ def check_seller_status(
         )
         time.sleep(login_wait)
 
-        # TikTok can redirect/reload several times after login. Observe URL transitions
-        # for up to `timeout` and treat it as logged-in as soon as homepage appears.
-        redirect_deadline = time.monotonic() + (timeout / 1000)
         current_url = page.url
-        last_url = current_url
         saw_homepage = "homepage" in current_url
-
-        while time.monotonic() < redirect_deadline and not saw_homepage:
+        if not saw_homepage:
             try:
-                page.wait_for_load_state("load", timeout=1000)
+                page.wait_for_url("**/homepage**", timeout=timeout)
+                saw_homepage = True
             except Exception:  # noqa: BLE001
                 pass
-
             current_url = page.url
-            if current_url != last_url:
-                log.info("Observed login redirect URL: %s", current_url)
-                last_url = current_url
-            saw_homepage = "homepage" in current_url
-            if saw_homepage:
-                break
-
-            time.sleep(0.5)
 
         if not saw_homepage and "/account/login" in current_url:
             log.warning("Account not logged in — current URL: %s", current_url)
-            return {
-                "pending_settlement": "0",
-                "payout_on_hold": "0",
-                "bank_account_number": None,
-                "shop_status": None,
-                "all_elements_missing": True,
-            }
+            return SellerStatus(
+                pending_settlement="0",
+                payout_on_hold="0",
+                bank_account_number=None,
+                shop_status=None,
+                all_elements_missing=True,
+            )
 
         log.info("Account is logged in — current URL before bills: %s", current_url)
         try:
@@ -116,44 +122,16 @@ def check_seller_status(
             time.sleep(10)
             page.goto(seller_bills_url, wait_until="load")
 
-        pending_found = False
-        pending_settlement: str = "0"
-        try:
-            locator = page.locator(f"xpath={settings.xpath_pending_balance}")
-            locator.wait_for(state="visible", timeout=timeout)
-            text = locator.text_content()
-            if text:
-                pending_settlement = text.replace("$", "").replace(",", "")
-            pending_found = True
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to read pending_settlement element.")
-
+        pending_raw, pending_found = _read_xpath(page, settings.xpath_pending_balance, timeout, log, "pending_settlement")
+        pending_settlement = pending_raw.replace("$", "").replace(",", "") if pending_raw else "0"
         time.sleep(delay)
 
-        payout_found = False
-        payout_on_hold: str = "0"
-        try:
-            locator = page.locator(f"xpath={settings.xpath_on_hold}")
-            locator.wait_for(state="visible", timeout=timeout)
-            text = locator.text_content()
-            if text:
-                payout_on_hold = text.replace("$", "").replace(",", "")
-            payout_found = True
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to read payout_on_hold element.")
-
+        payout_raw, payout_found = _read_xpath(page, settings.xpath_on_hold, timeout, log, "payout_on_hold")
+        payout_on_hold = payout_raw.replace("$", "").replace(",", "") if payout_raw else "0"
         time.sleep(delay)
 
-        bank_found = False
-        bank_account_number: str | None = None
-        try:
-            locator = page.locator(f"xpath={settings.xpath_bank_account}")
-            locator.wait_for(state="visible", timeout=timeout)
-            bank_account_number = locator.text_content()
-            bank_found = True
-        except Exception:  # noqa: BLE001
-            log.warning("Failed to read bank_account_number element.")
-
+        bank_raw, bank_found = _read_xpath(page, settings.xpath_bank_account, timeout, log, "bank_account_number")
+        bank_account_number = bank_raw
         time.sleep(delay)
 
         shop_status: str | None = None
@@ -170,16 +148,7 @@ def check_seller_status(
                 shop_status = str(value)
         except Exception:  # noqa: BLE001
             log.warning("Shop info API call failed: url=%s", shop_info_api_url)
-
         time.sleep(delay)
-
-        result = {
-            "pending_settlement": pending_settlement,
-            "payout_on_hold": payout_on_hold,
-            "bank_account_number": bank_account_number,
-            "shop_status": shop_status,
-            "all_elements_missing": not pending_found and not payout_found and not bank_found,
-        }
 
         log.info(
             "pending_settlement=%s payout_on_hold=%s bank_account_number=%s shop_status=%s",
@@ -189,4 +158,10 @@ def check_seller_status(
             shop_status,
         )
 
-        return result
+        return SellerStatus(
+            pending_settlement=pending_settlement,
+            payout_on_hold=payout_on_hold,
+            bank_account_number=bank_account_number,
+            shop_status=shop_status,
+            all_elements_missing=not pending_found and not payout_found and not bank_found,
+        )

@@ -97,15 +97,18 @@ Pure functions, no global state:
 
 ### `app/profile_actions.py`
 
-- `check_seller_status(ws_url, log, settings, region)` — navigates TikTok login page to verify session, then scrapes bills page for 3 DOM fields + 1 API field
+- `SellerStatus` — frozen dataclass: `pending_settlement`, `payout_on_hold`, `bank_account_number`, `shop_status`, `all_elements_missing`
+- `_read_xpath(page, xpath, timeout, log, field_name)` — shared DOM helper; returns `(text_content | None, found: bool)`
+- `check_seller_status(ws_url, log, settings, region) -> SellerStatus` — navigates TikTok login page (`wait_for_url` homepage detection), then scrapes bills page for 3 DOM fields + 1 API field
 
 Uses Playwright over CDP. All URLs, XPaths, timeouts come from `settings`.
 
 ### `app/supover_stores.py`
 
-- `push_store_status(...)` — POST store status to Supover
+- `EligibleStore` — NamedTuple: `store_id`, `store_name`, `shop_code`, `region`, `profile_id`, `profile_name`, `proxy_host`, `proxy_port`, `proxy_username`, `proxy_password`, `seller`, `telegram`
 - `fetch_dead_stores_with_balance(...)` — GET dead stores with balance
-- `all_store_and_profile_ids(stores)` — return one `EligibleStore` NamedTuple per row (store_id, shop_code, region, profile_id, profile_name, proxy_host, proxy_port, proxy_username, proxy_password)
+- `all_store_and_profile_ids(stores) -> list[EligibleStore]` — filter và normalise rows có HMA profile
+- `push_store_status(...)` — POST store status (hoặc error) về Supover
 
 ### `app/supover_sync.py`
 
@@ -126,16 +129,17 @@ daily via Windows Task Scheduler.
 
 ### TikTok store status check (`scripts/check_tiktok_store_status.py`)
 
+Key helpers: `_notify_supover_error` (push error về Supover cho mọi error path), `_process_store` (xử lý 1 store).
+
 For each dead-with-balance store from Supover:
-1. Test proxy via `api.ipify.org` → if dead, Telegram alert + skip store
-2. Start HMA profile → get `wsUrl` (HMA 400 → Telegram "Profile In Use" + skip)
-3. Navigate to TikTok login page (region `gb` auto-remapped to `uk`) → verify session is active
-4. If `page.goto` raises → Telegram "Playwright Error" + skip
-5. If not logged in → send Telegram alert, skip store, continue
-6. Navigate to bills page → extract 3 DOM fields + 1 API field
-7. Validate results — if element read failed, send Telegram alert
-8. POST data back to Supover
-9. Dwell → stop profile
+1. Test proxy via `api.ipify.org` → if dead, push Supover error + skip *(no Telegram)*
+2. Start HMA profile → get `wsUrl` (failure → push Supover error + Telegram "Profile In Use" + skip)
+3. `check_seller_status`: navigate TikTok login (region `GB` auto-remapped to `uk`); sleep `TIKTOK_LOGIN_WAIT_SECONDS`; detect homepage via `page.wait_for_url`
+4. If `check_seller_status` raises → push Supover error + Telegram "Playwright Error" + skip
+5. If `all_elements_missing` (not logged in) → push Supover error + skip *(no Telegram)*
+6. Validate `SellerStatus` — if read error (`pending+hold == "0"` or `shop_status is None`) → push Supover error + Telegram "Element Read Error" + **abort all remaining stores**
+7. If OK → POST `SellerStatus` data to Supover
+8. Dwell `TIKTOK_DWELL_SECONDS` (only on success) → stop profile (always, in `finally`)
 
 Runs every 2 days via Windows Task Scheduler.
 
