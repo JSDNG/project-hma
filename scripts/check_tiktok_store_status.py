@@ -183,7 +183,7 @@ def _process_store(
                 f"Store Name: {store_name} ({tt_shop_code})\n"
                 f"Profile Name: {profile_name}\n"
                 f"Seller: {seller}\n"
-                f"Telegram: @{telegram}\n"
+                f"Telegram: @{telegram.lstrip('@')}\n"
                 f"Error: Cannot open profile — seller is currently using it (HMA: {result.error})"
             ),
         )
@@ -207,7 +207,7 @@ def _process_store(
                     f"Store Name: {store_name} ({tt_shop_code})\n"
                     f"Profile Name: {profile_name}\n"
                     f"Seller: {seller}\n"
-                    f"Telegram: @{telegram}\n"
+                    f"Telegram: @{telegram.lstrip('@')}\n"
                     f"Error: Cannot reach TikTok seller page\n"
                     f"Details: {exc}"
                 ),
@@ -268,7 +268,7 @@ def _process_store(
                             f"Store Name: {store_name} ({tt_shop_code})\n"
                             f"Profile Name: {profile_name}\n"
                             f"Seller: {seller}\n"
-                            f"Telegram: @{telegram}\n"
+                            f"Telegram: @{telegram.lstrip('@')}\n"
                             f"Error: {error_detail}"
                         ),
                     )
