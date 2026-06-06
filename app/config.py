@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     supover_sync_url: str = ""
     supover_dead_stores_url: str = ""
     supover_stores_sync_url: str = ""
+    supover_delete_profiles_url: str = ""
 
     tiktok_seller_login_url: str = ""
     tiktok_seller_bills_url: str = ""
