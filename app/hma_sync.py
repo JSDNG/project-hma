@@ -133,6 +133,32 @@ def delete_profile(
     return session.delete(url, timeout=timeout)
 
 
+def interpret_delete_response(
+    resp: requests.Response, delete_success_code: int,
+) -> tuple[bool, str | None]:
+    """Validate an HMA ``DELETE /profiles/{id}`` response. Return (ok, error).
+
+    Success requires HTTP 2xx and ``body.code == delete_success_code``.
+    Anything else yields ``(False, error)`` with a human-readable reason
+    (e.g. HMA returns ``code == 0`` with HTTP 402 "API supported from Team
+    plan").
+    """
+    if not (200 <= resp.status_code < 300):
+        snippet = (resp.text or "")[:500]
+        return False, f"HMA returned HTTP {resp.status_code}: {snippet}"
+
+    body = parse_hma_body(resp)
+    if body is None:
+        snippet = (resp.text or "")[:500]
+        return False, f"HMA returned non-JSON body: {snippet}"
+
+    code = body.get("code")
+    if code != delete_success_code:
+        return False, f"HMA body code={code!r}, expected {delete_success_code}"
+
+    return True, None
+
+
 def _profile_action_url(base_url: str, action: str, profile_id: str, profiles_path: str) -> str:
     pid = profile_id.strip()
     if not pid:

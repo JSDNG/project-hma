@@ -8,6 +8,7 @@ import pytest
 
 from app.hma_sync import (
     delete_profile,
+    interpret_delete_response,
     interpret_start_response,
     profile_to_sync_row,
     start_profile,
@@ -141,6 +142,38 @@ def test_delete_profile_rejects_empty_id():
     with pytest.raises(ValueError):
         delete_profile(session, "http://hma.test", "   ", 5, "/profiles")
     session.delete.assert_not_called()
+
+
+def test_interpret_delete_response_success():
+    resp = MagicMock(status_code=200, text="ok")
+    resp.json.return_value = {"code": 1}
+    ok, error = interpret_delete_response(resp, 1)
+    assert ok is True
+    assert error is None
+
+
+def test_interpret_delete_response_non_2xx():
+    resp = MagicMock(status_code=402, text="API supported from Team plan")
+    resp.json.return_value = {"code": 0}
+    ok, error = interpret_delete_response(resp, 1)
+    assert ok is False
+    assert "402" in error
+
+
+def test_interpret_delete_response_wrong_code():
+    resp = MagicMock(status_code=200, text="ok")
+    resp.json.return_value = {"code": 0}
+    ok, error = interpret_delete_response(resp, 1)
+    assert ok is False
+    assert "code=0" in error
+
+
+def test_interpret_delete_response_non_json_body():
+    resp = MagicMock(status_code=200, text="<html>nope</html>")
+    resp.json.side_effect = ValueError("no json")
+    ok, error = interpret_delete_response(resp, 1)
+    assert ok is False
+    assert "non-JSON" in error
 
 
 def test_start_profile_builds_correct_url():
