@@ -10,11 +10,8 @@ Standalone — does not require the FastAPI service to be running. The script:
    deletes so HMA is not hammered.
 
 A single delete failure is logged and pushed to Telegram, then the run
-continues with the remaining profiles. To avoid hammering a systemic outage
-(HMA down, account not on a Team plan), the run aborts after
-``MAX_CONSECUTIVE_FAILURES`` failures in a row with one summary Telegram, and
-the local HMA API is pinged once up front so a dead HMA fails fast. Nothing is
-reported back to Supover.
+continues with the remaining profiles. The local HMA API is pinged once up
+front so a dead HMA fails fast. Nothing is reported back to Supover.
 
 Exit codes (so Task Scheduler "Last Run Result" is meaningful):
   0  success — every profile deleted.
@@ -62,7 +59,6 @@ EXIT_SUPOVER = 2
 EXIT_HMA = 3
 
 DELETE_INTERVAL_SECONDS = 5
-MAX_CONSECUTIVE_FAILURES = 5
 
 
 def _notify_failure(settings, profile, error: str) -> None:
@@ -131,7 +127,6 @@ def main() -> int:
 
     deleted = 0
     failed = 0
-    consecutive_failures = 0
     total = len(profiles)
     for i, profile in enumerate(profiles, 1):
         log.info(
@@ -154,31 +149,11 @@ def main() -> int:
 
         if error is None:
             deleted += 1
-            consecutive_failures = 0
             log.info("Deleted profile_id=%s.", profile.profile_id)
         else:
             failed += 1
-            consecutive_failures += 1
             log.error("Failed to delete profile_id=%s: %s", profile.profile_id, error)
             _notify_failure(settings, profile, error)
-            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                log.error(
-                    "Aborting: %d consecutive failures at profile %d/%d — likely a "
-                    "systemic issue (HMA down or no Team plan).",
-                    consecutive_failures, i, total,
-                )
-                send_telegram_message(
-                    settings.telegram_bot_token,
-                    settings.telegram_chat_id,
-                    (
-                        f"<b>Tool HMA Delete Profiles Aborted</b>\n"
-                        f"Stopped after {consecutive_failures} consecutive failures "
-                        f"at profile {i}/{total}.\n"
-                        f"Deleted: {deleted} · Failed: {failed}\n"
-                        f"Last error: {error}"
-                    ),
-                )
-                break
 
         if i < total:
             try:
