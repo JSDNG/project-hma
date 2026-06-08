@@ -88,6 +88,10 @@ def main() -> int:
         return EXIT_CONFIG
 
     session = requests.Session()
+    # HMA closes the socket after each request; reusing a pooled keep-alive
+    # connection then fails with ConnectionReset. Force a fresh connection per
+    # request so deletes don't fail every other call.
+    session.headers["Connection"] = "close"
 
     # Fail fast: don't pull 1234 ids from Supover if HMA can't be reached.
     try:
